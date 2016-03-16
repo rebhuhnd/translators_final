@@ -398,372 +398,6 @@ def insert_var_decls(n):
         raise Exception('Error in insert_var_decls: unhandled AST ' + repr(n))                    
 
 ###########################################################################################
-# Type analysis, this pass annotates the IR in-place with types in the 'type' attribute
-
-def join(t1,t2):
-    if t1 == 'pyobj':
-        return 'pyobj'
-    elif t2 == 'pyobj':
-        return 'pyobj'
-    elif t1 == 'undefined':
-        return t2
-    elif t2 == 'undefined':
-        return t1
-    elif t1 == t2:
-        return t1
-    else:
-        return 'pyobj'
-
-arith_returns = {
-    'int' : 'int',
-    'float' : 'float',
-    'pyobj' : 'pyobj',
-    'undefined' : 'undefined'
-    }
-
-
-arith_op = {
-        ('int',   'int')   : 'int' ,
-        ('int',   'float') : 'float' ,
-        ('int',   'bool')  : 'int' ,
-        ('int',   'pyobj')  : 'pyobj' ,
-        ('int',   'undefined')  : 'undefined' ,
-        ('float', 'int')   : 'float' ,
-        ('float', 'float') : 'float' ,
-        ('float', 'bool')  : 'float' ,
-        ('float', 'pyobj')  : 'pyobj' ,
-        ('float', 'undefined')  : 'undefined' ,
-        ('bool',  'int')   : 'int' ,
-        ('bool',  'float') : 'float' ,
-        ('bool',  'bool')  : 'int',
-        ('bool',  'pyobj')  : 'pyobj',
-        ('bool',  'undefined')  : 'undefined',
-        ('pyobj',   'int')   : 'pyobj' ,
-        ('pyobj',   'float') : 'pyobj' ,
-        ('pyobj',   'bool')  : 'pyobj' ,
-        ('pyobj',   'pyobj')  : 'pyobj',
-        ('pyobj',   'undefined')  : 'undefined',
-        ('undefined',   'int')   : 'undefined' ,
-        ('undefined',   'float') : 'undefined' ,
-        ('undefined',   'bool')  : 'undefined' ,
-        ('undefined',   'pyobj')  : 'undefined' ,
-        ('undefined',   'undefined')  : 'undefined',
-        ('pyobj',)  : 'pyobj',
-        ('undefined',)  : 'undefined',
-        ('int',)  : 'int',
-        ('float',)  : 'float',
-        ('bool',)  : 'int'
-        }
-
-bool_returns = {
-    'int' : 'bool',
-    'float' : 'bool',
-    'pyobj' : 'bool',
-    'bool' : 'bool',
-    'undefined' : 'bool'
-}
-
-bool_op = {
-        ('int',   'int')   : 'int' ,
-        ('int',   'float') : 'float' ,
-        ('int',   'bool')  : 'int' ,
-        ('int',   'pyobj')  : 'pyobj' ,
-        ('int',   'undefined')  : 'undefined' ,
-        ('float', 'int')   : 'float' ,
-        ('float', 'float') : 'float' ,
-        ('float', 'bool')  : 'float' ,
-        ('float', 'pyobj')  : 'pyobj' ,
-        ('float', 'undefined')  : 'undefined' ,
-        ('bool',  'int')   : 'int' ,
-        ('bool',  'float') : 'float' ,
-        ('bool',  'bool')  : 'bool',
-        ('bool',  'pyobj')  : 'pyobj',
-        ('bool',  'undefined')  : 'undefined',
-        ('pyobj',   'int')   : 'pyobj' ,
-        ('pyobj',   'float') : 'pyobj' ,
-        ('pyobj',   'bool')  : 'pyobj' ,
-        ('pyobj',   'undefined')  : 'undefined',
-        ('pyobj',   'pyobj')  : 'pyobj',
-        ('undefined',   'int')   : 'undefined' ,
-        ('undefined',   'float') : 'undefined' ,
-        ('undefined',   'bool')  : 'undefined' ,
-        ('undefined',   'pyobj')  : 'undefined',
-        ('undefined',   'undefined')  : 'undefined',
-        ('undefined',)  : 'undefined',
-        ('pyobj',)  : 'pyobj',
-        ('int',)  : 'int',
-        ('float',)  : 'float',
-        ('bool',)  : 'bool'
-        }
-
-arithop = (lambda ts: arith_op[ts])
-boolop = (lambda ts: bool_op[ts])
-def idop(ts):
-    if ts[0] == ts[1]:
-        return ts[0]
-    else:
-        return 'pyobj'
-
-find_op_tag = {
-    'add' : arithop,
-    'sub' : arithop,
-    'mul' : arithop,
-    'unary_add' : arithop,
-    'unary_sub' : arithop,
-    'logic_not' : boolop,
-    'logic_and' : boolop,
-    'logic_or' : boolop,
-    'equal' : boolop,
-    'not_equal' : boolop,
-    'less' : boolop,
-    'less_equal' : boolop,
-    'greater' : boolop,
-    'greater_equal' : boolop,
-    'identical' : idop,
-    'deref' : (lambda ts: ''),
-    'subscript' : (lambda ts: 'pyobj'),
-    'make_list' : (lambda ts: ''),
-    'assign' : (lambda ts: reduce(join, ts, 'undefined')),
-    'phi' : (lambda ts: reduce(join, ts, 'undefined'))
-}
-
-arith_ret = (lambda ts: arith_returns[arith_op[ts]])
-bool_ret = (lambda ts: bool_returns[bool_op[ts]])
-
-op_returns = {
-    'add' : arith_ret,
-    'sub' : arith_ret,
-    'mul' : arith_ret,
-    'unary_add' : arith_ret,
-    'unary_sub' : arith_ret,
-    'logic_not' : bool_ret,
-    'logic_and' : bool_ret,
-    'logic_or' : bool_ret,
-    'equal' : bool_ret,
-    'not_equal' : bool_ret,
-    'less' : bool_ret,
-    'less_equal' : bool_ret,
-    'greater' : bool_ret,
-    'greater_equal' : bool_ret,
-    'identical' : bool_ret,
-    'deref' : (lambda ts: 'pyobj'),
-    'subscript' : (lambda ts: 'pyobj'),
-    'make_list' : (lambda ts: 'pyobj'),
-    'assign' : (lambda ts: reduce(join, ts, 'undefined')),
-    'phi' : (lambda ts: reduce(join, ts, 'undefined'))
-    }
-
-type_changed = False
-
-def get_var_type(env, x):
-    if x in env:
-        return env[x]
-    else:
-        return 'undefined'
-
-# Don't need to do a join in update_var_type because the program
-# is in SSA form. There is only one assignment to each variable.
-def update_var_type(env, x, t):
-    if x in env:
-        if t == env[x]:
-            return False
-        else:
-            env[x] = t
-            return True
-    else:
-        env[x] = t
-        return True
-
-def predict_type(n, env):
-    global type_changed
-
-    if isinstance(n, Module):
-        type_changed = True
-        while type_changed:
-            type_changed = False
-            predict_type(n.node, env)
-
-    elif isinstance(n, Stmt):
-        for s in n.nodes:
-            predict_type(s, env)
-
-    elif isinstance(n, Printnl):
-        for e in n.nodes:
-            predict_type(e, env)
-
-    elif isinstance(n, Discard):
-        predict_type(n.expr, env)
-
-    elif isinstance(n, If):
-        for (cond,body) in n.tests:
-            predict_type(cond,env)
-            predict_type(body,env)
-        predict_type(n.else_,env)
-        for s in n.phis:
-            predict_type(s,env)
-
-    elif n == None:
-        pass
-
-    elif isinstance(n, While):
-        predict_type(n.test,env)
-        predict_type(n.body,env)
-        for s in n.phis:
-            predict_type(s,env)
-
-    elif isinstance(n, Pass):
-        pass
-
-    elif isinstance(n, Assign):
-        predict_type(n.expr, env)
-        for a in n.nodes:
-            if isinstance(a, AssName):
-                type_changed += update_var_type(env, a.name, n.expr.type)
-                a.type = get_var_type(env, a.name)
-            else:
-                predict_type(a, env)
-            
-    elif isinstance(n, VarDecl):
-        n.type = get_var_type(env, n.name)
-
-    elif isinstance(n, Const):
-        if isinstance(n.value, float):
-            n.type = 'float'
-        elif isinstance(n.value, int):
-            n.type = 'int'
-        else:
-            raise Exception('Error in predict_type: unhandled constant ' + repr(n))            
-
-    elif isinstance(n, Name):
-        if n.name == 'True' or n.name == 'False':
-            n.type = 'bool'
-        else:
-            n.type = get_var_type(env, n.name)
-            
-    elif isinstance(n, PrimitiveOp):
-        for e in n.nodes:
-            predict_type(e, env)
-        n.type = op_returns[n.name](tuple([e.type for e in n.nodes]))
-
-    elif isinstance(n, IfExp):
-        predict_type(n.test, env)
-        predict_type(n.then, env)
-        predict_type(n.else_, env)
-        if n.then.type == n.else_.type:
-            n.type = n.then.type
-        else:
-            n.type = 'pyobj'
-
-    elif isinstance(n, Let):
-        predict_type(n.rhs, env)
-        body_env = copy.deepcopy(env)
-        update_var_type(body_env, n.var, n.rhs.type)
-        predict_type(n.body, body_env)
-        n.type = n.body.type
-        
-    else:
-        raise Exception('Error in predict_type: unrecognized AST node ' + repr(n))
-
-###########################################################################################
-# Type specialization
-#   select specialized primitive operations
-#   insert calls to is_true and make_* where appropriate
-
-def convert_to_pyobj(e):
-    if e.type != 'pyobj' and e.type != 'undefined':
-        new_e = PrimitiveOp(e.type + '_to_pyobj', [e])
-        new_e.type = 'pyobj'
-        return new_e
-    else:
-        return e
-
-def test_is_true(e):
-    if e.type == 'pyobj':
-        ret = PrimitiveOp('pyobj_to_bool', [e])
-        ret.type = 'bool'
-        return ret
-    else:
-        return e
-
-def type_specialize(n):
-    #print >> logs, 'type specialize ' + repr(n)
-    if isinstance(n, Module):
-        return Module(n.doc, type_specialize(n.node))
-    elif isinstance(n, Stmt):
-        return Stmt([type_specialize(s) for s in n.nodes])
-    elif isinstance(n, Printnl):
-        # would be nice to specialize print, but not a high priority
-        return Printnl([convert_to_pyobj(type_specialize(e)) for e in n.nodes], n.dest)
-    elif isinstance(n, Discard):
-        return Discard(type_specialize(n.expr))
-    elif isinstance(n, If):
-        tests = [(test_is_true(type_specialize(cond)), type_specialize(body)) \
-                 for (cond,body) in n.tests]
-        else_ = type_specialize(n.else_)
-        phis = [type_specialize(s) for s in n.phis]
-        ret = If(tests,else_)
-        ret.phis = phis
-        return ret
-    elif n == None:
-        return None
-    elif isinstance(n, While):
-        test = test_is_true(type_specialize(n.test))
-        body = type_specialize(n.body)
-        phis = [type_specialize(s) for s in n.phis]
-        ret = While(test, body, None)
-        ret.phis = phis
-        return ret
-    elif isinstance(n, Pass):
-        return n
-    elif isinstance(n, Assign):
-        expr = type_specialize(n.expr)
-        nodes = [type_specialize(a) for a in n.nodes]
-        if any([a.type == 'pyobj' for a in nodes]):
-            expr = convert_to_pyobj(expr)
-        return Assign(nodes, expr)
-
-    elif isinstance(n, AssName):
-        return n
-    
-    elif isinstance(n, VarDecl):
-        return n
-
-    elif isinstance(n, Const):
-        return n
-    elif isinstance(n, Name):
-        return n
-    elif isinstance(n, PrimitiveOp):
-        nodes = [type_specialize(e) for e in n.nodes]
-        tag = find_op_tag[n.name](tuple([e.type for e in n.nodes]))
-        #if any([e.type == 'pyobj' for e in nodes]):
-        if tag == 'pyobj':
-            nodes = [convert_to_pyobj(e) for e in nodes]
-        name = n.name if tag == '' else n.name + '_' + tag
-        r = PrimitiveOp(name, nodes)
-        r.type = n.type
-        return r
-    elif isinstance(n, IfExp):
-        test = type_specialize(n.test)
-        then = type_specialize(n.then)
-        else_ = type_specialize(n.else_)
-        test = test_is_true(test)
-        if any([e.type == 'pyobj' for e in [n,then,else_]]):
-            then = convert_to_pyobj(then)
-            else_ = convert_to_pyobj(else_)
-        r = IfExp(test, then, else_)
-        r.type = n.type
-        return r
-    elif isinstance(n, Let):
-        rhs = type_specialize(n.rhs)
-        body = type_specialize(n.body)
-        r = Let(n.var, rhs, body)
-        r.type = n.type
-        return r
-    else:
-        raise Exception('Error in type_specialize: unrecognized AST node ' + repr(n))
-
-
-###########################################################################################
 # Remove SSA
 
 def split_phis(phis):
@@ -838,9 +472,6 @@ def remove_ssa(n):
 ###########################################################################################
 # Generate C output
     
-python_type_to_c = { 'int' : 'int', 'bool' : 'char', 'float' : 'double', 'pyobj' : 'pyobj',
-                     'undefined' : 'pyobj' }
-
 skeleton = open("skeleton.c").readlines()
 
 def generate_c(n):
@@ -851,7 +482,7 @@ def generate_c(n):
     elif isinstance(n, Printnl):
         space = 'printf(\" \");'
         newline = 'printf(\"\\n\");'
-        nodes_in_c = ['print_%s(%s);' % (x.type, generate_c(x)) for x in n.nodes] 
+        nodes_in_c = ['print(%s);' % generate_c(x) for x in n.nodes] 
         return space.join(nodes_in_c) + newline
     elif isinstance(n, Discard):
         return generate_c(n.expr) + ';'
@@ -860,9 +491,9 @@ def generate_c(n):
             else_ = ''
         else:
             else_ = 'else\n' + generate_c(n.else_)
-        return 'if ' + '\n else if '.join(['(%s)\n%s' % (generate_c(cond), generate_c(body)) for (cond,body) in n.tests]) + else_
+        return 'if ' + '\n else if '.join(['(pyobj_to_bool (%s))\n%s' % (generate_c(cond), generate_c(body)) for (cond,body) in n.tests]) + else_
     elif isinstance(n, While):
-        return 'while (%s)\n%s' % (generate_c(n.test), generate_c(n.body))
+        return 'while (pyobj_to_bool (%s))\n%s' % (generate_c(n.test), generate_c(n.body))
     elif isinstance(n, Pass):
         return ';'
     elif isinstance(n, Assign):
@@ -871,21 +502,22 @@ def generate_c(n):
     elif isinstance(n, AssName):
         return n.name
     elif isinstance(n, VarDecl):
-        return '%s %s;' % (python_type_to_c[n.type], n.name)
+        return 'pyobj %s;' % n.name
     
     elif isinstance(n, Const):
-        return repr(n.value)
+        return type (n.value).__name__ + "_to_pyobj (%s)" % n.value
+        #return repr(n.value)
     elif isinstance(n, Name):
         if n.name == 'True':
-            return '1'
+            return 'bool_to_pyobj (1)'
         elif n.name == 'False':
-            return '0'
+            return 'bool_to_pyobj (0)'
         else:
             return n.name
     elif isinstance(n, PrimitiveOp):
         if n.name == 'deref':
             return '*' + generate_c(n.nodes[0])
-        elif n.name == 'assign_pyobj' or n.name == 'assign_int' or n.name == 'assign_bool' or n.name == 'assign_float':
+        elif n.name == 'assign':
             return '(' + generate_c(n.nodes[0]) + '=' + generate_c(n.nodes[1]) + ')'
         else:
             return n.name + '(' + ', '.join([generate_c(e) for e in n.nodes]) + ')'
@@ -893,9 +525,8 @@ def generate_c(n):
         return '(' + generate_c(n.test) + ' ? ' \
                + generate_c(n.then) + ':' + generate_c(n.else_) + ')'
     elif isinstance(n, Let):
-        t = python_type_to_c[n.rhs.type]
         rhs = generate_c(n.rhs)
-        return '({ ' + t + ' ' + n.var + ' = ' + rhs + '; ' + generate_c(n.body) + ';})'
+        return '({ pyobj ' + n.var + ' = ' + rhs + '; ' + generate_c(n.body) + ';})'
     elif n == None:
         return ''
     else:
@@ -917,16 +548,7 @@ if __name__ == "__main__":
         if debug:
             print >> logs, ir
             print >> logs, 'inserting var decls ---------'
-        ir = insert_var_decls(ir)        
-        if debug:
-            print >> logs, ir
-            print >> logs, 'predicting types -----------'
-        predict_type(ir, {})
-        if debug:
-            print >> logs, ir
-            print >> logs, 'type specialization -------'
-            print >> logs, ir
-        ir = type_specialize(ir)
+        ir = insert_var_decls(ir)
         if debug:
             print >> logs, 'remove ssa ----------------'
             print >> logs, ir
