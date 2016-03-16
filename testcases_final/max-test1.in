@@ -1,0 +1,42 @@
+x = 3
+y = 4+x
+x = (2+1)
+print -x+y
+i = 5
+it = 0
+while it < x+y:
+    print it+x, it 
+    it = it + 1
+s = 0
+it = 0
+while it < 10:
+    s = s + it
+    it = it + 1
+print s, i, y
+
+l = [1, 2, True]
+print l, l[1]
+
+print [] is []
+
+print l is l
+
+if True:
+    print 12
+else:
+    print 13
+
+if not False:
+    print 12
+else:
+    print 13
+
+if False:
+    print 13
+elif True:
+    print 12
+else:
+    print 14
+
+
+print 1*2+3, 1+2*3, 144 == 12*12, 11-10
