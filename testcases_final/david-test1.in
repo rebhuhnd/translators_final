@@ -1,0 +1,10 @@
+def f(x):
+    return x-3
+
+def g(x):
+    return x+3
+
+def z(x):
+	return f(x)+g(x)
+
+print z(4)

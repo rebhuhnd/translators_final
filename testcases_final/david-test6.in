@@ -1,0 +1,7 @@
+x = 155151
+y = 259922
+f = {x:1000, y:15111}
+
+print f[x], f[y]
+print f.keys()
+print f.values()

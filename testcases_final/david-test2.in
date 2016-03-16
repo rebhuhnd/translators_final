@@ -1,0 +1,7 @@
+def recurse(x):
+    print x,
+    if x<=0:
+        return
+    recurse(x-1)
+
+recurse(10)
