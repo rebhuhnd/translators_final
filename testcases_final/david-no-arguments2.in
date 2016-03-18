@@ -1,0 +1,9 @@
+def f():
+    return 12345
+
+print f()
+  
+def f():
+    return 1000+3
+
+print f()
