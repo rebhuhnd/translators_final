@@ -157,7 +157,8 @@ def simplify_ops(n, context='expr'):
     
     elif isinstance(n, Call):
         return Call(func=simplify_ops(n.func), args = map (simplify_ops, n.args), keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
-
+    elif isinstance(n, Str):
+        return n
     else:
         raise Exception('Error in simplify_ops: unrecognized AST node ' + repr(n) + dump(n))
 
@@ -232,7 +233,7 @@ def convert_to_ssa(t, current_version={}):
     elif isinstance(t, Num):
         return t
     elif isinstance(t, Name):
-        if t.id in ['True', 'False', 'None']:
+        if t.id in ['True', 'False', 'None', 'len']:
             return t
         else:
             return Name(id=t.id + '_' + str(get_current(current_version, t.id)))
@@ -344,7 +345,8 @@ def convert_to_ssa(t, current_version={}):
     
     elif isinstance(t, Return):
         return Return(value=convert_to_ssa(t.value, current_version))
-
+    elif isinstance(t, Str):
+        return t
     else:
         raise Exception('Error in convert_to_ssa: unrecognized AST node ' + repr(t))
 
@@ -520,6 +522,8 @@ def generate_c(n):
 
     elif isinstance(n, Num):
         return type(n.n).__name__ + "_to_pyobj (%s)" % n.n
+    elif isinstance(n, Str):
+        return "string_to_pyobj (\"%s\")" % n.s
     elif isinstance(n, Name):
         if n.id == 'True':
             return 'bool_to_pyobj (1)'

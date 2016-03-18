@@ -11,7 +11,7 @@
 #define logic_or(A, B) bool_to_pyobj(pyobj_to_bool(A) || pyobj_to_bool(B))
 
 
-enum type_tag { INT, FLOAT, BOOL, LIST, NONE };
+enum type_tag { INT, FLOAT, BOOL, LIST, NONE, STRING };
 
 struct pyobj_struct;
 
@@ -22,6 +22,13 @@ struct array_struct {
 
 typedef struct array_struct array;
 
+struct string_struct {
+    const char *data;
+    unsigned int len;
+};
+
+typedef struct string_struct string;
+
 struct pyobj_struct {
   enum type_tag tag;
   union {
@@ -29,6 +36,7 @@ struct pyobj_struct {
     double f;             /* float */
     char b;               /* bool */
     array l;              /* list */
+    string s;               /* string */
   } u;
 };
 typedef struct pyobj_struct pyobj;
@@ -140,6 +148,22 @@ static void print_list(pyobj pyobj_list)
         current_list = NULL;
 }
 
+static pyobj len(pyobj v){
+    pyobj r;
+    r.tag = INT;
+    switch(v.tag){
+        case LIST:
+            r.u.i = v.u.l.len;
+            break;
+        case STRING:
+            r.u.i = v.u.s.len;
+            break;
+        default:
+            printf("Error using len: incompatible type.");
+            exit(1);
+    }
+    return r;
+}
 
 static void print(pyobj v) {
   switch (v.tag) {
@@ -160,6 +184,12 @@ static void print(pyobj v) {
   case NONE:
     printf ("None");
     break;
+  case STRING:
+    for (int i=0; i<v.u.s.len; i++){
+        printf("%c",v.u.s.data[i]);    
+    }
+    break;
+    
   default:
     printf("error, unhandled case in print\n");
     exit (1);
@@ -185,6 +215,14 @@ pyobj bool_to_pyobj(char x) {
   v.tag = BOOL;
   v.u.b = x;
   return v;
+}
+
+pyobj string_to_pyobj (const char *x) {
+    pyobj v;
+    v.tag = STRING;
+    v.u.s.len = strlen (x);
+    v.u.s.data = x;
+    return v;
 }
 
 pyobj make_list(pyobj len) {
@@ -228,6 +266,34 @@ pyobj* list_nth(pyobj list, pyobj n) {
   }
 }
 
+pyobj* string_nth(pyobj string, pyobj n) {
+    assert (string.tag == STRING);
+    pyobj *new_str = malloc(sizeof(pyobj));
+    new_str->tag = STRING;
+    char *new_string = malloc (1);
+    new_str->u.s.data = new_string;
+    new_str->u.s.len = 1;
+    unsigned int idx;
+    switch(n.tag){
+    case BOOL:
+        idx = (unsigned int)n.u.b;
+        break;
+    case INT:
+        idx = (unsigned int)n.u.i;
+        break;
+    default:
+        printf("ERROR: string_nth expected integer index");
+        exit(1);
+    }
+    if (idx >= string.u.s.len) {
+        printf("ERROR: string_nth index larger than list");
+        exit(1);
+	}
+    new_string[0] = string.u.s.data[idx];
+    
+    return new_str;
+}    
+    
 pyobj list_add(pyobj x, pyobj y) {
   array a = x.u.l;
   array b = y.u.l;
@@ -302,6 +368,75 @@ pyobj list_mul(pyobj x, pyobj y) {
   }  
 }
 
+pyobj string_add(pyobj x, pyobj y) {
+  string a = x.u.s;
+  string b = y.u.s;
+  pyobj v;
+  v.tag = STRING;
+  v.u.s.len = a.len + b.len;
+
+  unsigned int i;
+  char *new_string = malloc (a.len + b.len);
+  for (i = 0; i != a.len; ++i)
+    new_string[i] = a.data[i];
+  for (i = 0; i != b.len; ++i)
+    new_string[a.len + i] = b.data[i];
+  v.u.s.data = new_string;
+  return v;
+}
+
+pyobj string_sub(pyobj x, pyobj y) {
+  printf("error, unsupported operand types");
+  exit (1);
+}
+
+pyobj string_mult(pyobj x, int n) {
+  int i;
+  pyobj r = string_to_pyobj ("");
+  for (i = 0; i != n; ++i)
+    r = string_add (x, r);
+  return r;
+}
+
+pyobj string_divide(pyobj x, pyobj y) {
+  printf("error, unsupported operand types");
+  exit (1);
+}
+
+pyobj string_mul(pyobj x, pyobj y) {
+  switch (x.tag) {
+  case INT:
+    switch (y.tag) {
+    case STRING:
+      return string_mult(y, x.u.i);
+    default:
+      printf("error, unsupported operand types");
+      exit (1);
+    }
+  case BOOL:
+    switch (y.tag) {
+    case STRING:
+      return string_mult(y, x.u.b);
+    default:
+      printf("error, unsupported operand types");
+      exit (1);
+    }
+  case STRING:
+    switch (y.tag) {
+    case INT:
+      return string_mult(x, y.u.i);
+    case BOOL:
+      return string_mult(x, y.u.b);
+    default:
+      printf("error, unsupported operand types");
+      exit (1);
+    }
+  default:
+    printf("error, unsupported operand types");
+    exit (1);
+  }  
+}
+
 static int is_false(pyobj v)
 {
   switch (v.tag) {
@@ -325,6 +460,8 @@ pyobj* subscript(pyobj c, pyobj key)
   switch (c.tag) {
   case LIST:
     return list_nth(c, key);
+  case STRING:
+    return string_nth(c, key);
   default:
     printf("error in subscript, not a list or dictionary\n");
     exit (1);
@@ -362,8 +499,10 @@ pyobj NAME(pyobj a, pyobj b) { \
       return int_to_pyobj(a.u.i OP b.u.b); \
     case LIST: \
       return list_##NAME(a, b); \
+    case STRING: \
+      return string_##NAME(a, b); \
     default: \
-      printf("error, unhandled case in operator\n"); \
+      printf("error, unhandled case in operator %s 1\n", #NAME); \
       exit (1); \
     } \
   case FLOAT: \
@@ -375,7 +514,7 @@ pyobj NAME(pyobj a, pyobj b) { \
     case BOOL: \
       return float_to_pyobj(a.u.f OP b.u.b); \
     default: \
-      printf("error, unhandled case in operator\n"); \
+      printf("error, unhandled case in operator %s 2\n", #NAME); \
       exit (1); \
     } \
   case BOOL: \
@@ -388,8 +527,10 @@ pyobj NAME(pyobj a, pyobj b) { \
       return int_to_pyobj(a.u.b OP b.u.b); \
     case LIST: \
       return list_##NAME(a, b); \
+    case STRING: \
+      return string_##NAME(a, b); \
     default: \
-      printf("error, unhandled case in operator\n"); \
+      printf("error, unhandled case in operator %s 3\n", #NAME); \
       exit (1); \
     } \
   case LIST: \
@@ -401,11 +542,21 @@ pyobj NAME(pyobj a, pyobj b) { \
     case BOOL: \
       return list_##NAME(a, b); \
     default: \
-      printf("error, unhandled case in operator\n"); \
+      printf("error, unhandled case in operator %s 4\n", #NAME); \
       exit (1); \
     } \
+    case STRING: \
+        switch (b.tag){\
+        case STRING:\
+        case INT:\
+        case BOOL:\
+            return string_##NAME(a,b);\
+        default:\
+            printf("error, unhandled case in operator %s 6\n", #NAME);\
+            exit(1);\
+        }\
   default: \
-    printf("error, unhandled case in operator\n"); \
+    printf("error, unhandled case in operator %s 5\n", #NAME); \
     exit (1); \
   } \
 }
@@ -470,6 +621,22 @@ static pyobj none_equal (pyobj a, pyobj b) {
     return bool_to_pyobj (a.tag == b.tag);
 }
 
+pyobj string_less(string x, string y) {
+  int len = min (x.len, y.len);
+  int cmp = memcmp (x.data, y.data, len);
+  if (cmp < 0)
+    return bool_to_pyobj (1);
+  if (cmp > 0)
+    return bool_to_pyobj (0);
+  return bool_to_pyobj (x.len < y.len);
+}
+
+pyobj string_equal(string x, string y) {
+  if (x.len != y.len)
+    return bool_to_pyobj (0);
+  return bool_to_pyobj (memcmp (x.data, y.data, x.len) == 0);
+}
+
 #define gen_comparison(NAME, OP) \
 pyobj NAME(pyobj a, pyobj b) \
 {\
@@ -516,6 +683,13 @@ pyobj NAME(pyobj a, pyobj b) \
     default: \
       return bool_to_pyobj (0);                      \
     } \
+  case STRING: \
+    switch (b.tag) { \
+    case STRING: \
+      return string_##NAME(a.u.s, b.u.s);           \
+    default: \
+      return bool_to_pyobj (0);                      \
+    } \
   case NONE: \
     return none_##NAME (a, b);                       \
   default: \
@@ -551,11 +725,40 @@ pyobj identical(pyobj a, pyobj b) {
         case FLOAT:  return bool_to_pyobj (a.u.f == b.u.f);
         case LIST:   return bool_to_pyobj (a.u.l.len == b.u.l.len && a.u.l.data == b.u.l.data);
         case NONE:   return bool_to_pyobj (1);
+        case STRING: return bool_to_pyobj (a.u.s.len == b.u.s.len && a.u.s.data == b.u.s.data);
     }
     return bool_to_pyobj (0);
 }
 
 pyobj contains(pyobj a, pyobj b) {
+    if (b.tag == STRING)
+    {
+        assert (a.tag == STRING);
+        
+        if (a.u.s.len > b.u.s.len)
+            return bool_to_pyobj(0);
+        
+        int start_idx = 0;
+        while (start_idx + a.u.s.len <= b.u.s.len) {
+            if (memcmp (a.u.s.data, b.u.s.data + start_idx, a.u.s.len) == 0)
+                return bool_to_pyobj (1);
+            start_idx++;
+        }
+        return bool_to_pyobj (0);
+/*        int matched=0;*/
+/*        for (int i=0; i<b.u.s.len, i++){*/
+/*        // check the first character*/
+/*            if a.u.s.data[matched] == b.u.s.data[i]{*/
+/*                matched++*/
+/*                if a.u.s.len == matched{*/
+/*                */
+/*                }*/
+/*                    return bool_to_pyobj(1)*/
+/*            }*/
+/*                    */
+/*        }*/
+    }
+    
     assert (b.tag == LIST);
     for (unsigned int i = 0; i < b.u.l.len; i++)
     {
