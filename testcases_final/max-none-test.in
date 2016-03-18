@@ -1,0 +1,30 @@
+print None
+
+def f():
+    print 1
+
+print f()
+
+def f():
+    print 2
+    return
+    print 3
+
+print f()
+
+print f () < -300
+print f () is None
+print f () == None
+print None is None
+print None == None
+print None <= None
+print None < None
+
+print None < 3
+print None > 3
+print None == 0
+print None == False
+print None == True
+print None < True
+print None < []
+print None < [3]
