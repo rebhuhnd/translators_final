@@ -85,7 +85,9 @@ compare_to_fun = {Lt: 'less', Gt: 'greater', LtE: 'less_equal', GtE: 'greater_eq
 
 # context is either 'expr' or 'lhs'
 def simplify_ops(n, context='expr'):
-    if isinstance(n, list):
+    if n is None:
+        return Name (id = "None", ctx = Load ())
+    elif isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
         return map(simplify_ops, n)
     elif isinstance(n, Module):
@@ -211,7 +213,6 @@ def get_current(current_version, x):
     else:
         return 0
 
-
 def convert_to_ssa(t, current_version={}):
     if False:
         print >> logs, 'convert to ssa: ' + repr(t)
@@ -225,7 +226,7 @@ def convert_to_ssa(t, current_version={}):
     elif isinstance(t, Num):
         return t
     elif isinstance(t, Name):
-        if t.id in ['True', 'False']:
+        if t.id in ['True', 'False', 'None']:
             return t
         else:
             return Name(id=t.id + '_' + str(get_current(current_version, t.id)))
@@ -563,7 +564,7 @@ def get_functions (n):
     for n in n.body:
         
         if isinstance (n, FunctionDef):
-            print "%s\n{%s return int_to_pyobj (0);}" % (get_prototype (n), generate_c (n.body))
+            print "%s\n{%s return None;}" % (get_prototype (n), generate_c (n.body))
 
 
 ######################### MAIN ##################################

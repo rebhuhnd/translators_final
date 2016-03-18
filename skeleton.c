@@ -11,7 +11,7 @@
 #define logic_or(A, B) bool_to_pyobj(pyobj_to_bool(A) || pyobj_to_bool(B))
 
 
-enum type_tag { INT, FLOAT, BOOL, LIST };
+enum type_tag { INT, FLOAT, BOOL, LIST, NONE };
 
 struct pyobj_struct;
 
@@ -32,6 +32,8 @@ struct pyobj_struct {
   } u;
 };
 typedef struct pyobj_struct pyobj;
+
+pyobj None = {NONE};
 
 static int is_false(pyobj v);
 
@@ -157,6 +159,9 @@ static void print(pyobj v) {
     print_list(v);
     break;
   }
+  case NONE:
+    printf ("None");
+    break;
   default:
     printf("error, unhandled case in print\n");
     exit (1);
@@ -453,9 +458,19 @@ pyobj list_greater_equal(array x, array y) {
   return logic_not (list_less(y,x));
 }
 
+static pyobj none_less (pyobj a, pyobj b) {
+    return bool_to_pyobj (b.tag != NONE);
+}
+
+static pyobj none_equal (pyobj a, pyobj b) {
+    return bool_to_pyobj (a.tag == b.tag);
+}
+
 #define gen_comparison(NAME, OP) \
 pyobj NAME(pyobj a, pyobj b) \
 {\
+  if (b.tag == NONE) \
+    return none_##NAME (a, b); \
   switch (a.tag) {\
   case INT:\
     switch (b.tag) {\
@@ -497,6 +512,8 @@ pyobj NAME(pyobj a, pyobj b) \
     default: \
       return bool_to_pyobj (0);                      \
     } \
+  case NONE: \
+    return none_##NAME (a, b);                       \
   default: \
     return bool_to_pyobj (0);                        \
   } \
@@ -529,6 +546,7 @@ pyobj identical(pyobj a, pyobj b) {
         case BOOL:   return bool_to_pyobj (a.u.b == b.u.b);
         case FLOAT:  return bool_to_pyobj (a.u.f == b.u.f);
         case LIST:   return bool_to_pyobj (a.u.l.len == b.u.l.len && a.u.l.data == b.u.l.data);
+        case NONE:   return bool_to_pyobj (1);
     }
     return bool_to_pyobj (0);
 }
