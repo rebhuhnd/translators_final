@@ -1,13 +1,11 @@
 #! /usr/bin/env python
 
 import sys
-
-logs = sys.stderr
-import traceback
-# import compiler
-# from compiler.ast import *
 from ast import *
 import copy
+import traceback
+
+logs = sys.stderr
 
 debug = True
 
@@ -22,7 +20,6 @@ def append_stmts(s1, s2):
 
 # lhs : string, rhs : expr
 def make_assign(lhs, rhs):
-    # return Assign(nodes=[AssName(name=lhs, flags='OP_ASSIGN')], expr=rhs)
     return Assign(targets=[Name(id=lhs, ctx=Store())], value=rhs)
 
 
@@ -38,10 +35,10 @@ class PrimitiveOp(AST):
         self.nodes = nodes
         self.lineno = lineno
 
-    def getChildren(self):
+    def get_children(self):
         return self.nodes
 
-    def getChildNodes(self):
+    def get_child_nodes(self):
         return self.nodes
 
     def __repr__(self):
@@ -55,10 +52,10 @@ class Let(AST):
         self.body = body
         self.lineno = lineno
 
-    def getChildren(self):
+    def get_children(self):
         return self.rhs, self.body
 
-    def getChildNodes(self):
+    def get_child_nodes(self):
         return self.rhs, self.body
 
     def __repr__(self):
@@ -72,7 +69,7 @@ counter = 0
 def generate_name(x):
     global counter
     name = x + str(counter)
-    counter = counter + 1
+    counter += 1
     return name
 
 
@@ -88,9 +85,9 @@ compare_to_fun = {Lt: 'less', Gt: 'greater', LtE: 'less_equal', GtE: 'greater_eq
 
 # context is either 'expr' or 'lhs'
 def simplify_ops(n, context='expr'):
-    if isinstance (n, list):
+    if isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
-        return map (simplify_ops, n)
+        return map(simplify_ops, n)
     elif isinstance(n, Module):
         return Module(body=map(simplify_ops, n.body))
     elif isinstance(n, Print):
@@ -110,7 +107,7 @@ def simplify_ops(n, context='expr'):
         left = simplify_ops(n.left)
         l_name = generate_name('left')
         right = simplify_ops(n.right)
-        return Let(l_name, left, PrimitiveOp(name, [Name(l_name, Load ()), right]))
+        return Let(l_name, left, PrimitiveOp(name, [Name(l_name, Load()), right]))
     elif isinstance(n, BoolOp):  # And, Or
         return PrimitiveOp(class_to_fun[n.op.__class__], map(simplify_ops, n.values))
     elif isinstance(n, IfExp):
@@ -130,18 +127,18 @@ def simplify_ops(n, context='expr'):
             if len(nodes) == 0:
                 return Name(id=ls_name)
             else:
-                return Let('_', PrimitiveOp('assign', \
-                                            [PrimitiveOp('deref', \
-                                                         [PrimitiveOp('subscript', \
-                                                                      [Name(id=ls_name), Num(n=i)]) \
-                                                          ]), \
-                                             simplify_ops(nodes[0])]), \
+                return Let('_', PrimitiveOp('assign',
+                                            [PrimitiveOp('deref',
+                                                         [PrimitiveOp('subscript',
+                                                                      [Name(id=ls_name), Num(n=i)])
+                                                          ]),
+                                             simplify_ops(nodes[0])]),
                            gen_list(nodes[1:], i + 1))
 
-        return Let(ls_name, PrimitiveOp('make_list', [Num(n=len(n.elts))]), \
+        return Let(ls_name, PrimitiveOp('make_list', [Num(n=len(n.elts))]),
                    gen_list(n.elts, 0))
     elif isinstance(n, Subscript):  # Subscript(value=List(elts=[...]), slice=Index(value=Num(n=0)), ctx=Load()))
-        return PrimitiveOp('deref', [PrimitiveOp('subscript', \
+        return PrimitiveOp('deref', [PrimitiveOp('subscript',
                                                  [simplify_ops(n.value), simplify_ops(n.slice.value)])])
     else:
         raise Exception('Error in simplify_ops: unrecognized AST node ' + repr(n))
@@ -155,32 +152,30 @@ def union(a, b):
 
 
 def assigned_vars(n):
-    # if isinstance(n, Stmt):
-    #     return reduce(union, [assigned_vars(s) for s in n.nodes], set([]))
-    if isinstance (n, Module):
-        return assigned_vars (n.body)
+    if isinstance(n, Module):
+        return assigned_vars(n.body)
     elif isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
-        return reduce(union, map (assigned_vars, n), set([]))
+        return reduce(union, map(assigned_vars, n), set([]))
     elif isinstance(n, Print):
         return set([])
     elif isinstance(n, Pass):
         return set([])
     elif isinstance(n, If):
-        return assigned_vars (n.body) \
+        return assigned_vars(n.body) \
                | assigned_vars(n.orelse) \
-               | (reduce(union, [assigned_vars(s) for s in n.phis], set([])) \
-                      if hasattr(n, 'phis') else set([]))
-    elif n == None:
+               | (reduce(union, [assigned_vars(s) for s in n.phis], set([]))
+                  if hasattr(n, 'phis') else set([]))
+    elif n is None:
         return set([])
     elif isinstance(n, Assign):
         return reduce(union, [assigned_vars(n) for n in n.targets], set([]))
-    elif isinstance(n, Name) and isinstance (n.ctx, Store):
+    elif isinstance(n, Name) and isinstance(n.ctx, Store):
         return set([n.id])
     elif isinstance(n, While):
         return assigned_vars(n.body) \
-               | (reduce(union, [assigned_vars(s) for s in n.phis], set([])) \
-                      if hasattr(n, 'phis') else set([]))
+               | (reduce(union, [assigned_vars(s) for s in n.phis], set([]))
+                  if hasattr(n, 'phis') else set([]))
     elif isinstance(n, Delete):
         return set([])
     else:
@@ -214,7 +209,7 @@ def convert_to_ssa(t, current_version={}):
         # the actual Python list type, not an AST node representing a list
         return [convert_to_ssa(e, current_version) for e in t]
     elif isinstance(t, Module):
-        return Module(body=convert_to_ssa (t.body, {}))
+        return Module(body=convert_to_ssa(t.body, {}))
     elif isinstance(t, Print):
         return Print(values=[convert_to_ssa(e, current_version) for e in t.values])
     elif isinstance(t, Num):
@@ -236,20 +231,20 @@ def convert_to_ssa(t, current_version={}):
         return IfExp(test=new_test, body=new_body, orelse=new_orelse)
 
     elif isinstance(t, If):
-        new_test = convert_to_ssa (t.test, current_version)
-        body_cv = copy.deepcopy (current_version)
-        new_body = convert_to_ssa (t.body, body_cv)
+        new_test = convert_to_ssa(t.test, current_version)
+        body_cv = copy.deepcopy(current_version)
+        new_body = convert_to_ssa(t.body, body_cv)
         else_cv = copy.deepcopy(current_version)
         new_orelse = convert_to_ssa(t.orelse, else_cv)
 
-        assigned = assigned_vars (t.body) | assigned_vars (t.orelse)
-        
+        assigned = assigned_vars(t.body) | assigned_vars(t.orelse)
+
         phis = []
         for x in assigned:
             current_version[x] = get_high(x)
-            phi_rhs = [Name(x + '_' + str(get_current(body_cv, x)), Store ())]
-            phi_rhs.append(Name(x + '_' + str(get_current(else_cv, x)), Store ()))
-            phi = make_assign(x + '_' + str(get_current(current_version, x)),\
+            phi_rhs = [Name(x + '_' + str(get_current(body_cv, x)), Store()),
+                       Name(x + '_' + str(get_current(else_cv, x)), Store())]
+            phi = make_assign(x + '_' + str(get_current(current_version, x)),
                               PrimitiveOp('phi', phi_rhs))
             phis.append(phi)
 
@@ -260,7 +255,7 @@ def convert_to_ssa(t, current_version={}):
     elif isinstance(t, While):
         pre_cv = copy.deepcopy(current_version)
         pre = Expression(nodes=[])
-        
+
         if debug:
             print >> logs, 'convert to ssa While ', t.test
         assigned = assigned_vars(t.body)
@@ -276,9 +271,9 @@ def convert_to_ssa(t, current_version={}):
 
         phis = []
         for x in assigned:
-            body_var = Name(x + '_' + str(get_current(body_cv, x)), Load ())
-            pre_var = Name(x + '_' + str(get_current(pre_cv, x)), Load ())
-            phi = make_assign(x + '_' + str(get_current(current_version, x)), \
+            body_var = Name(x + '_' + str(get_current(body_cv, x)), Load())
+            pre_var = Name(x + '_' + str(get_current(pre_cv, x)), Load())
+            phi = make_assign(x + '_' + str(get_current(current_version, x)),
                               PrimitiveOp('phi', [pre_var, body_var]))
             phis.append(phi)
 
@@ -300,7 +295,6 @@ def convert_to_ssa(t, current_version={}):
 
         return Assign(targets=new_nodes, value=new_rhs)
 
-
     elif isinstance(t, Let):
         rhs = convert_to_ssa(t.rhs, current_version)
         v = get_high(t.var)
@@ -321,10 +315,10 @@ class VarDecl(AST):
         self.type = type
         self.lineno = lineno
 
-    def getChildren(self):
+    def get_children(self):
         return self.name, self.type
 
-    def getChildNodes(self):
+    def get_child_nodes(self):
         return ()
 
     def __repr__(self):
@@ -334,7 +328,6 @@ class VarDecl(AST):
 def insert_var_decls(n):
     if isinstance(n, Module):
         decls = [VarDecl(x, 'undefined') for x in assigned_vars(n.body)]
-        # decls = [VarDecl(x,'undefined') for x in assigned_vars(n.node)]
         return Module(body=prepend_stmts(decls, n.body))
     else:
         raise Exception('Error in insert_var_decls: unhandled AST ' + repr(n))
@@ -355,13 +348,14 @@ def split_phis(phis):
                 branch_dict[i].append(make_assign(lhs, rhs))
             else:
                 branch_dict[i] = [make_assign(lhs, rhs)]
-            i = i + 1
+            i += 1
     return branch_dict
 
+
 def remove_ssa(n):
-    if isinstance (n, list):
+    if isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
-        return map (remove_ssa, n)
+        return map(remove_ssa, n)
     elif isinstance(n, Module):
         return Module(remove_ssa(n.body))
     elif isinstance(n, Expression):
@@ -372,8 +366,8 @@ def remove_ssa(n):
         return n
     elif isinstance(n, If):
         test = n.test
-        body = remove_ssa (n.body)
-        orelse = remove_ssa (n.orelse)
+        body = remove_ssa(n.body)
+        orelse = remove_ssa(n.orelse)
         phis = [remove_ssa(s) for s in n.phis]
         branch_dict = split_phis(phis)
         if debug:
@@ -388,7 +382,7 @@ def remove_ssa(n):
             new_orelse = orelse
         ret = If(test, new_body, new_orelse)
         return ret
-    elif n == None:
+    elif n is None:
         return None
     elif isinstance(n, While):
         test = n.test
@@ -420,20 +414,20 @@ skeleton = open("skeleton.c").readlines()
 def generate_c(n):
     if isinstance(n, Module):
         return "".join(skeleton[:-2]) + generate_c(n.body) + "".join(skeleton[-2:])
-    elif isinstance (n, list):
+    elif isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
-        return '{' + '\n'.join (map (generate_c, n)) + '}'
+        return '{' + '\n'.join(map(generate_c, n)) + '}'
     elif isinstance(n, Expression):
         return '{' + '\n'.join([generate_c(e) for e in n.body]) + '}'
     elif isinstance(n, Print):
         space = 'printf(\" \");'
         newline = 'printf(\"\\n\");'
-        nodes_in_c = ['print(%s);' % generate_c(x) for x in n.values] 
+        nodes_in_c = ['print(%s);' % generate_c(x) for x in n.values]
         return space.join(nodes_in_c) + newline
     elif isinstance(n, Delete):
         return generate_c(n.targets) + ';'
     elif isinstance(n, If):
-        if len (n.orelse) == 0:
+        if len(n.orelse) == 0:
             else_ = ''
         else:
             else_ = 'else\n' + generate_c(n.orelse)
@@ -447,9 +441,9 @@ def generate_c(n):
                + ' = ' + generate_c(n.value) + ';'
     elif isinstance(n, VarDecl):
         return 'pyobj %s;' % n.name
-    
+
     elif isinstance(n, Num):
-        return type (n.n).__name__ + "_to_pyobj (%s)" % n.n
+        return type(n.n).__name__ + "_to_pyobj (%s)" % n.n
     elif isinstance(n, Name):
         if n.id == 'True':
             return 'bool_to_pyobj (1)'
@@ -470,7 +464,7 @@ def generate_c(n):
     elif isinstance(n, Let):
         rhs = generate_c(n.rhs)
         return '({ pyobj ' + n.var + ' = ' + rhs + '; ' + generate_c(n.body) + ';})'
-    elif n == None:
+    elif n is None:
         return ''
     else:
         raise Exception('Error in generate_c: unrecognized AST node ' + repr(n))
@@ -482,24 +476,24 @@ if __name__ == "__main__":
     try:
         ast = parse("".join(sys.stdin.readlines()))
         if debug:
-            print >> logs, dump (ast)
+            print >> logs, dump(ast)
             print >> logs, 'simplifying ops --------------'
         ir = simplify_ops(ast)
         if debug:
-            print >> logs, dump (ir)
+            print >> logs, dump(ir)
             print >> logs, 'converting to ssa -----------'
         ir = convert_to_ssa(ir)
         if debug:
-            print >> logs, dump (ir)
+            print >> logs, dump(ir)
             print >> logs, 'inserting var decls ---------'
         ir = insert_var_decls(ir)
         if debug:
             print >> logs, 'remove ssa ----------------'
-            print >> logs, dump (ir)
+            print >> logs, dump(ir)
         ir = remove_ssa(ir)
         if debug:
             print >> logs, 'finished remove ssa ------'
-            print >> logs, dump (ir)
+            print >> logs, dump(ir)
             print >> logs, 'generating C'
         print generate_c(ir)
     except EOFError:
