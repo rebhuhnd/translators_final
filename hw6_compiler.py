@@ -148,7 +148,7 @@ def simplify_ops(n, context='expr'):
         return Return(value=simplify_ops(n.value))
     
     elif isinstance(n, Call):
-        return Call(func=simplify_ops(n.func), args=n.args, keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
+        return Call(func=simplify_ops(n.func), args = map (simplify_ops, n.args), keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
 
     else:
         raise Exception('Error in simplify_ops: unrecognized AST node ' + repr(n) + dump(n))
@@ -316,13 +316,24 @@ def convert_to_ssa(t, current_version={}):
         name = t.name
         name_v = get_high (name)
         current_version[name] = name_v
-        return FunctionDef(name=t.name + '_' + str(name_v), args=t.args, decorator_list=t.decorator_list, body=map(convert_to_ssa, t.body))
+        args = convert_to_ssa (t.args, current_version)
+        body = [convert_to_ssa (n, current_version) for n in t.body]
+        return FunctionDef(name=t.name + '_' + str(name_v), args = args, decorator_list=t.decorator_list, body = body)
+    
+    elif isinstance(t, arguments):
+        def version_arg (a):
+            assert isinstance (a, Name)
+            name = a.id
+            name_v = get_high (name)
+            current_version[name] = name_v
+            return Name (id = name + "_" + str (name_v), ctx = a.ctx)
+        return arguments (args = map (version_arg, t.args), vararg=t.vararg, kwarg=t.kwarg, defaults=t.defaults)
 
     elif isinstance(t, Expr):
         return Expr(value=convert_to_ssa(t.value, current_version))
     
     elif isinstance(t, Call):
-        return Call(func=convert_to_ssa(t.func, current_version), args=t.args, keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
+        return Call(func=convert_to_ssa(t.func, current_version), args = convert_to_ssa (t.args, current_version), keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
     
     elif isinstance(t, Return):
         return Return(value=convert_to_ssa(t.value, current_version))
@@ -521,10 +532,12 @@ def generate_c(n):
         return '({ pyobj ' + n.var + ' = ' + rhs + '; ' + generate_c(n.body) + ';})'
     elif isinstance(n, FunctionDef):
         return ""
+    elif isinstance (n, arguments):
+        return ", ".join (map (lambda a: "pyobj " + generate_c (a), n.args))
     elif isinstance(n, Expr):
         return generate_c(n.value) + ";"
     elif isinstance(n, Call):
-        return generate_c(n.func) + "()"
+        return generate_c(n.func) + "(%s)" % ", ".join (map (generate_c, n.args))
     elif isinstance(n, Return):
         return "return (%s);" % generate_c (n.value)
     elif n is None:
@@ -534,7 +547,7 @@ def generate_c(n):
 
 def get_prototype (funcdef):
     
-    return "pyobj %s()" % funcdef.name
+    return "pyobj %s(%s)" % (funcdef.name, generate_c (funcdef.args))
 
 def get_prototypes (n):
     assert isinstance (n, Module)
