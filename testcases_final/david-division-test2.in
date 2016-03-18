@@ -1,0 +1,7 @@
+print 1+2/3+4
+print (1+2)/(3+4)
+x=4.0
+y=3.0
+z=2.0
+
+print x/y/z,x/z/y, z/y/x
