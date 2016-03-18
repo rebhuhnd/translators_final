@@ -1,12 +1,20 @@
-## Named after the Egyptian god of the afterlife who judged souls.
-## This is a bash version of the auto judge.
+## A bash version of the auto judge.
+TESTCASES_DIR=testcases_final
+COMPILER=hw6_compiler.py
+
+## Array of test cases that failed to compile.
 FAILED_TO_COMPILE=()
+
+## Array of test cases that passed.
 PASSED=()
+
+## Array of test cases that compiled
+# but did not generate the same output.
 FAILED=()
 
-for i in testcases_final/*.in; do
+for i in $TESTCASES_DIR/*.in; do
 	echo Testing $i ...
-    cat "$i" | python hw6_compiler.py > temp.c #2>/dev/null
+    cat "$i" | python $COMPILER > temp.c #2>/dev/null
 
 	if clang temp.c -o temp -w
 	then
@@ -25,8 +33,12 @@ for i in testcases_final/*.in; do
     fi
 done
 
+## Removes temporary files
+
 rm temp
 rm temp.c
+
+## Prints a summary.
 
 echo "SUMMARY:"
 echo "PASSED:"
