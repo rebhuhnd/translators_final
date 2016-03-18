@@ -140,8 +140,18 @@ def simplify_ops(n, context='expr'):
     elif isinstance(n, Subscript):  # Subscript(value=List(elts=[...]), slice=Index(value=Num(n=0)), ctx=Load()))
         return PrimitiveOp('deref', [PrimitiveOp('subscript',
                                                  [simplify_ops(n.value), simplify_ops(n.slice.value)])])
+    elif isinstance(n, FunctionDef):
+        return FunctionDef(name=n.name, args=n.args, decorator_list=n.decorator_list, body=map(simplify_ops, n.body))
+    elif isinstance(n, Expr):
+        return Expr(value=simplify_ops(n.value))
+    elif isinstance(n, Return):
+        return Return(value=simplify_ops(n.value))
+    
+    elif isinstance(n, Call):
+        return Call(func=simplify_ops(n.func), args=n.args, keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
+
     else:
-        raise Exception('Error in simplify_ops: unrecognized AST node ' + repr(n))
+        raise Exception('Error in simplify_ops: unrecognized AST node ' + repr(n) + dump(n))
 
 
 ###########################################################################################
@@ -302,6 +312,18 @@ def convert_to_ssa(t, current_version={}):
         body = convert_to_ssa(t.body, current_version)
         return Let(t.var + '_' + str(v), rhs, body)
 
+    elif isinstance(t, FunctionDef):
+        return FunctionDef(name=t.name + '_' + str(get_current(current_version, t.name)), args=t.args, decorator_list=t.decorator_list, body=map(convert_to_ssa, t.body))
+
+    elif isinstance(t, Expr):
+        return Expr(value=convert_to_ssa(t.value))
+    
+    elif isinstance(t, Call):
+        return Call(func=convert_to_ssa(t.func), args=t.args, keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
+    
+    elif isinstance(t, Return):
+        return Return(value=convert_to_ssa(t.value))
+
     else:
         raise Exception('Error in convert_to_ssa: unrecognized AST node ' + repr(t))
 
@@ -327,8 +349,17 @@ class VarDecl(AST):
 
 def insert_var_decls(n):
     if isinstance(n, Module):
-        decls = [VarDecl(x, 'undefined') for x in assigned_vars(n.body)]
-        return Module(body=prepend_stmts(decls, n.body))
+        assigned_for_main = []
+        body = []
+        for x in n.body:
+            if isinstance (x, FunctionDef):
+                decls = [VarDecl(y, 'undefined') for y in assigned_vars (x.body)]
+                body.append (FunctionDef(name=x.name, args=x.args, decorator_list=x.decorator_list, body=prepend_stmts (decls, x.body))) 
+            else:
+                body.append (x)
+                assigned_for_main += list (assigned_vars (x))
+        decls = [VarDecl(x, 'undefined') for x in assigned_for_main]
+        return Module(body=prepend_stmts(decls, body))
     else:
         raise Exception('Error in insert_var_decls: unhandled AST ' + repr(n))
 
@@ -398,22 +429,43 @@ def remove_ssa(n):
         return ret
     elif isinstance(n, Pass):
         return n
+
     elif isinstance(n, Assign):
         return Assign(n.targets, n.value)
+
     elif isinstance(n, VarDecl):
         return n
+
+    elif isinstance(n, FunctionDef):
+        return FunctionDef(name=n.name, args=n.args, decorator_list=n.decorator_list, body=map(remove_ssa, n.body))
+
+    elif isinstance(n, Expr):
+        return n
+    
+    elif isinstance(n, Call):
+        return Call(func=remove_ssa(n.func), args=n.args, keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
+    
+    elif isinstance(n, Return):
+        return n
+    
+    elif isinstance(n, Num):
+        return n
+
+    elif isinstance(n, Name):
+        return n
+
     else:
-        raise Exception('Error in remove_ssa: unrecognized AST node ' + repr(n))
+        raise Exception('Error in remove_ssa: unrecognized AST node ' + repr(n) + dump(n))
 
 
 ###########################################################################################
 # Generate C output
-skeleton = open("skeleton.c").readlines()
+skeleton = open("skeleton.c").read()
 
 
 def generate_c(n):
     if isinstance(n, Module):
-        return "".join(skeleton[:-2]) + generate_c(n.body) + "".join(skeleton[-2:])
+        return "int main (int argc, const char *argv[]) {" + generate_c(n.body) + "return 0;}"
     elif isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
         return '{' + '\n'.join(map(generate_c, n)) + '}'
@@ -464,10 +516,38 @@ def generate_c(n):
     elif isinstance(n, Let):
         rhs = generate_c(n.rhs)
         return '({ pyobj ' + n.var + ' = ' + rhs + '; ' + generate_c(n.body) + ';})'
+    elif isinstance(n, FunctionDef):
+        return ""
+    elif isinstance(n, Expr):
+        return generate_c(n.value) + ";"
+    elif isinstance(n, Call):
+        return generate_c(n.func) + "()"
+    elif isinstance(n, Return):
+        return "return (%s);" % generate_c (n.value)
     elif n is None:
         return ''
     else:
-        raise Exception('Error in generate_c: unrecognized AST node ' + repr(n))
+        raise Exception('Error in generate_c: unrecognized AST node ' + repr(n) + dump(n))
+
+def get_prototype (funcdef):
+    
+    return "pyobj %s()" % funcdef.name
+
+def get_prototypes (n):
+    assert isinstance (n, Module)
+    
+    for n in n.body:
+        
+        if isinstance (n, FunctionDef):
+            print get_prototype (n) + ";\n"    
+
+def get_functions (n):
+    assert isinstance (n, Module)
+    
+    for n in n.body:
+        
+        if isinstance (n, FunctionDef):
+            print "%s\n{%s return int_to_pyobj (0);}" % (get_prototype (n), generate_c (n.body))
 
 
 ######################### MAIN ##################################
@@ -495,6 +575,9 @@ if __name__ == "__main__":
             print >> logs, 'finished remove ssa ------'
             print >> logs, dump(ir)
             print >> logs, 'generating C'
+        print skeleton
+        get_prototypes (ir)
+        get_functions (ir)
         print generate_c(ir)
     except EOFError:
         print "Could not open file %s." % sys.argv[1]

@@ -532,7 +532,3 @@ pyobj identical(pyobj a, pyobj b) {
     }
     return bool_to_pyobj (0);
 }
-
-int main() {
-  return 0;
-}
