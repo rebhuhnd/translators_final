@@ -141,19 +141,6 @@ static void print_list(pyobj pyobj_list)
 }
 
 
-char is_in_list(pyobj a, pyobj b)
-{
-    char ret = 0;
-
-    unsigned int i;
-    for(i = 0; i< a.u.l.len; i++)
-    {
-        if (pyobj_to_bool (identical (a.u.l.data[i],b)))
-            return 1;
-    }
-    return ret;
-}
-
 static void print(pyobj v) {
   switch (v.tag) {
   case INT:
@@ -566,7 +553,7 @@ pyobj contains(pyobj a, pyobj b) {
     assert (b.tag == LIST);
     for (unsigned int i = 0; i < b.u.l.len; i++)
     {
-      if (pyobj_to_bool(identical(*list_nth(b,int_to_pyobj((int)i)), a)))
+      if (pyobj_to_bool(equal(*list_nth(b,int_to_pyobj((int)i)), a)))
       { 
          return bool_to_pyobj (1);
       }
