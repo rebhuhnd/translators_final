@@ -1,0 +1,13 @@
+print "hello"
+x= "a"+"bc"
+
+print x
+a = "hello"
+b = "world"
+print a+","+b
+
+print a[2]
+print len(a)
+
+print "j"*3
+print "jj"*3
