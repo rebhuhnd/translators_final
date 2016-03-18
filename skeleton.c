@@ -256,6 +256,11 @@ pyobj list_mult(pyobj x, int n) {
   return r;
 }
 
+pyobj list_divide(pyobj x, pyobj y) {
+  printf("error, unsupported operand types");
+  exit (1);
+}
+
 pyobj logic_not(pyobj v);
 pyobj list_or (pyobj x, pyobj y) {
     if (pyobj_to_bool (logic_not (x)))
@@ -408,6 +413,7 @@ pyobj NAME(pyobj a, pyobj b) { \
 gen_binary_op(add, +)
 gen_binary_op(sub, -)
 gen_binary_op(mul, *)
+gen_binary_op(divide, /)
 
 
 pyobj logic_not(pyobj v)

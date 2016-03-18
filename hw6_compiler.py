@@ -77,7 +77,7 @@ binary_op_classes = [Add, Sub, Mult]
 unary_op_classes = [UAdd, USub, Not]
 
 class_to_fun = {Add: 'add', Sub: 'sub', Mult: 'mul',
-                UAdd: 'unary_add', USub: 'unary_sub', Not: 'logic_not'}
+                UAdd: 'unary_add', USub: 'unary_sub', Not: 'logic_not', Div:'divide'}
 
 compare_to_fun = {Lt: 'less', Gt: 'greater', LtE: 'less_equal', GtE: 'greater_equal',
                   Eq: 'equal', NotEq: 'not_equal', Is: 'identical', In: 'contains'}
