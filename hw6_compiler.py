@@ -17,15 +17,7 @@ def prepend_stmts(ss, s):
 
 
 def append_stmts(s1, s2):
-    if isinstance(s1, Expression):
-        if isinstance(s2, Expression):
-            return Expression(s1.body + s2.body)
-        else:
-            return Expression(s1.body + s2)
-    elif isinstance(s2, Expression):
-        return Expression(s1 + s2.body)
-    else:
-        return Expression(s1 + s2)
+    return s1 + s2
 
 
 # lhs : string, rhs : expr
@@ -220,9 +212,9 @@ def convert_to_ssa(t, current_version={}):
         print >> logs, 'convert to ssa: ' + repr(t)
     if isinstance(t, list):
         # the actual Python list type, not an AST node representing a list
-        return [convert_to_ssa(e, {}) for e in t]
+        return [convert_to_ssa(e, current_version) for e in t]
     elif isinstance(t, Module):
-        return Module(body=[convert_to_ssa(e, {}) for e in t.body])
+        return Module(body=convert_to_ssa (t.body, {}))
     elif isinstance(t, Print):
         return Print(values=[convert_to_ssa(e, current_version) for e in t.values])
     elif isinstance(t, Num):
@@ -251,13 +243,14 @@ def convert_to_ssa(t, current_version={}):
         new_orelse = convert_to_ssa(t.orelse, else_cv)
 
         assigned = assigned_vars (t.body) | assigned_vars (t.orelse)
-
+        
         phis = []
         for x in assigned:
-            body_var = Name(x + '_' + str(get_current(body_cv, x)), Store())
-            pre_var = Name(x + '_' + str(get_current(pre_cv, x)), Store ())
-            phi = make_assign(x + '_' + str(get_current(current_version, x)), \
-                              PrimitiveOp('phi', [pre_var, body_var]))
+            current_version[x] = get_high(x)
+            phi_rhs = [Name(x + '_' + str(get_current(body_cv, x)), Store ())]
+            phi_rhs.append(Name(x + '_' + str(get_current(else_cv, x)), Store ()))
+            phi = make_assign(x + '_' + str(get_current(current_version, x)),\
+                              PrimitiveOp('phi', phi_rhs))
             phis.append(phi)
 
         ret = If(test=new_test, body=new_body, orelse=new_orelse)
@@ -267,6 +260,7 @@ def convert_to_ssa(t, current_version={}):
     elif isinstance(t, While):
         pre_cv = copy.deepcopy(current_version)
         pre = Expression(nodes=[])
+        
         if debug:
             print >> logs, 'convert to ssa While ', t.test
         assigned = assigned_vars(t.body)
@@ -282,8 +276,8 @@ def convert_to_ssa(t, current_version={}):
 
         phis = []
         for x in assigned:
-            body_var = Name(x + '_' + str(get_current(body_cv, x)), Store())
-            pre_var = Name(x + '_' + str(get_current(pre_cv, x)), Store ())
+            body_var = Name(x + '_' + str(get_current(body_cv, x)), Load ())
+            pre_var = Name(x + '_' + str(get_current(pre_cv, x)), Load ())
             phi = make_assign(x + '_' + str(get_current(current_version, x)), \
                               PrimitiveOp('phi', [pre_var, body_var]))
             phis.append(phi)
@@ -761,15 +755,12 @@ def remove_ssa(n):
         if debug:
             print >> logs, 'remove ssa If '
             print >> logs, 'branch dict: ', branch_dict
-        b = 0
         new_tests = []
-        if 0 < len(branch_dict):
-            new_body = append_stmts(body, Expression(branch_dict[b]))
+        if len(branch_dict):
+            new_body = append_stmts(body, branch_dict[0])
+            new_orelse = append_stmts(orelse, branch_dict[1])
         else:
             new_body = body
-        if 0 < len(branch_dict):
-            new_orelse = append_stmts(orelse, Expression(branch_dict[b]))
-        else:
             new_orelse = orelse
         ret = If(test, new_body, new_orelse)
         return ret
@@ -783,7 +774,7 @@ def remove_ssa(n):
         if debug:
             print >> logs, 'remove ssa While ', phis, branch_dict
         if 0 < len(branch_dict):
-            ret = Expression(branch_dict[0] + [While(test, append_stmts(body, Expression(branch_dict[1])), None)])
+            ret = Expression(branch_dict[0] + [While(test, append_stmts(body, branch_dict[1]), None)])
         else:
             ret = While(test, body, None)
         return ret
