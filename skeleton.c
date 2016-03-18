@@ -42,6 +42,7 @@ pyobj greater_equal(pyobj a, pyobj b);
 pyobj equal(pyobj a, pyobj b);
 pyobj not_equal(pyobj a, pyobj b);
 pyobj identical(pyobj lhs, pyobj rhs);
+pyobj contains(pyobj lhs, pyobj rhs);
 pyobj add(pyobj lhs, pyobj rhs);
 
 pyobj make_list(pyobj len);
@@ -532,6 +533,19 @@ pyobj identical(pyobj a, pyobj b) {
     }
     return bool_to_pyobj (0);
 }
+
+pyobj contains(pyobj a, pyobj b) {
+    assert (b.tag == LIST);
+    for (unsigned int i = 0; i < b.u.l.len; i++)
+    {
+      if (pyobj_to_bool(identical(*list_nth(b,int_to_pyobj((int)i)), a)))
+      { 
+         return bool_to_pyobj (1);
+      }
+    }
+    return bool_to_pyobj (0);
+}
+
 
 int main() {
   return 0;
