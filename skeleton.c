@@ -47,6 +47,16 @@ pyobj identical(pyobj lhs, pyobj rhs);
 pyobj add(pyobj lhs, pyobj rhs);
 
 pyobj make_list(pyobj len);
+static enum {LINE_INITIAL, LINE_CONTINUED, LINE_NEW} line_state = LINE_INITIAL;
+#define handle_continued(end) { \
+    if (line_state == LINE_CONTINUED) {\
+        if (end) \
+            putchar ('\n'); \
+        else \
+            putchar (' '); \
+    } else if (line_state == LINE_NEW)\
+        putchar ('\n'); \
+}
 static void print(pyobj v);
 
 

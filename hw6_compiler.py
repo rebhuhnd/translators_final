@@ -93,7 +93,13 @@ def simplify_ops(n, context='expr'):
     elif isinstance(n, Module):
         return Module(body=map(simplify_ops, n.body))
     elif isinstance(n, Print):
-        return Print(values=map(simplify_ops, n.values))
+        def recursive_generate_lets (values, let_vals):
+            if len (values) == 0:
+                return Print(values = let_vals, nl = n.nl)
+            temp_name = generate_name ("print_let")
+            temp_val = Name (id = temp_name, ctx = Load ())
+            return Expr (value = Let (temp_name, simplify_ops (values[0]), recursive_generate_lets (values[1:], let_vals + [temp_val])))
+        return recursive_generate_lets (n.values, [])
     elif isinstance(n, If):
         return If(test=simplify_ops(n.test), body=simplify_ops(n.body), orelse=simplify_ops(n.orelse))
     elif isinstance(n, While):
@@ -222,7 +228,7 @@ def convert_to_ssa(t, current_version={}):
     elif isinstance(t, Module):
         return Module(body=convert_to_ssa(t.body, {}))
     elif isinstance(t, Print):
-        return Print(values=[convert_to_ssa(e, current_version) for e in t.values])
+        return Print(values=[convert_to_ssa(e, current_version) for e in t.values],nl=t.nl)
     elif isinstance(t, Num):
         return t
     elif isinstance(t, Name):
@@ -442,6 +448,10 @@ def remove_ssa(n):
         else:
             ret = While(test, body, None)
         return ret
+    
+    elif isinstance (n, Let):
+        return n
+    
     elif isinstance(n, Pass):
         return n
 
@@ -480,7 +490,7 @@ skeleton = open("skeleton.c").read()
 
 def generate_c(n):
     if isinstance(n, Module):
-        return "int main (int argc, const char *argv[]) {" + generate_c(n.body) + "return 0;}"
+        return "int main (int argc, const char *argv[]) {" + generate_c(n.body) + "\nhandle_continued (1);\nreturn 0;}"
     elif isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
         return '{' + '\n'.join(map(generate_c, n)) + '}'
@@ -488,9 +498,8 @@ def generate_c(n):
         return '{' + '\n'.join([generate_c(e) for e in n.body]) + '}'
     elif isinstance(n, Print):
         space = 'printf(\" \");'
-        newline = 'printf(\"\\n\");'
         nodes_in_c = ['print(%s);' % generate_c(x) for x in n.values]
-        return space.join(nodes_in_c) + newline
+        return "handle_continued (0);\n" + space.join(nodes_in_c) + "\nline_state = %s;\n" % ("LINE_NEW" if n.nl else "LINE_CONTINUED")
     elif isinstance(n, Delete):
         return generate_c(n.targets) + ';'
     elif isinstance(n, If):
