@@ -1,0 +1,47 @@
+def return3_1 ():
+    return 3
+
+def return3_2 ():
+    return 1 + 2
+
+def return3_3 ():
+    x = 1 + 2
+    return x
+
+def return3_4 ():
+    if True:
+        return 3
+    else:
+        return 12
+
+def return3_5 ():
+    if False:
+        return 12
+    else:
+        return 3
+
+def return3_6 ():
+    if True:
+        ret = 3
+    else:
+        ret = 12
+    return ret
+
+def return3_7 ():
+    if False:
+        ret = 12
+    else:
+        ret = 3
+    return ret
+
+def return3_8 ():
+    return return3_7 ()
+
+print return3_1 ()
+print return3_2 ()
+print return3_3 ()
+print return3_4 ()
+print return3_5 ()
+print return3_6 ()
+print return3_7 ()
+print return3_8 ()
