@@ -313,16 +313,19 @@ def convert_to_ssa(t, current_version={}):
         return Let(t.var + '_' + str(v), rhs, body)
 
     elif isinstance(t, FunctionDef):
-        return FunctionDef(name=t.name + '_' + str(get_current(current_version, t.name)), args=t.args, decorator_list=t.decorator_list, body=map(convert_to_ssa, t.body))
+        name = t.name
+        name_v = get_high (name)
+        current_version[name] = name_v
+        return FunctionDef(name=t.name + '_' + str(name_v), args=t.args, decorator_list=t.decorator_list, body=map(convert_to_ssa, t.body))
 
     elif isinstance(t, Expr):
-        return Expr(value=convert_to_ssa(t.value))
+        return Expr(value=convert_to_ssa(t.value, current_version))
     
     elif isinstance(t, Call):
-        return Call(func=convert_to_ssa(t.func), args=t.args, keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
+        return Call(func=convert_to_ssa(t.func, current_version), args=t.args, keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
     
     elif isinstance(t, Return):
-        return Return(value=convert_to_ssa(t.value))
+        return Return(value=convert_to_ssa(t.value, current_version))
 
     else:
         raise Exception('Error in convert_to_ssa: unrecognized AST node ' + repr(t))
