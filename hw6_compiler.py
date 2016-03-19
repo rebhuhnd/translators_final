@@ -126,8 +126,14 @@ def simplify_ops(n, context='expr'):
         if len(ops) == 1:
             return PrimitiveOp(ops[0], operands)
         else:  # 3<5>4 => 3<5 and 5>4
-            return PrimitiveOp('logic_and',
-                               [PrimitiveOp(op, [x, y]) for op, x, y in zip(ops, operands, operands[1:])])
+            children = [PrimitiveOp(op, [x, y]) for op, x, y in zip(ops, operands, operands[1:])]
+            first = children[0]
+            for child in children[1:]:
+                first = PrimitiveOp('logic_and',[first, child])
+            return first
+
+#            return PrimitiveOp('logic_and',
+#                               [PrimitiveOp(op, [x, y]) for op, x, y in zip(ops, operands, operands[1:])])
     elif isinstance(n, List):
         ls_name = generate_name('list')
 
