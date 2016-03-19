@@ -10,7 +10,7 @@
 #define logic_and(A, B) bool_to_pyobj(pyobj_to_bool(A) && pyobj_to_bool(B))
 #define logic_or(A, B) bool_to_pyobj(pyobj_to_bool(A) || pyobj_to_bool(B))
 
-enum type_tag { INT, FLOAT, BOOL, LIST, NONE, STRING, INVALID };
+enum type_tag { INT, FLOAT, BOOL, LIST, NONE, STRING, DICT, INVALID };
 
 struct pyobj_struct;
 
