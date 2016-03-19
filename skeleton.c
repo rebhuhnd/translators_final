@@ -336,7 +336,7 @@ pyobj* dict_lookup(pyobj dictionary, pyobj n) {
 	}
 	while(*current_node != NULL)
 	{
-		printf("!!! Log: %d, key: %d, dict_key: %d, dict_value: %d\n", pyobj_to_bool(not_equal(*((*current_node)->key), n)), n.u.i, (*current_node)->key->u.i, (*current_node)->value->u.i);
+		printf(""); //This keeps it from Segfaulting most of the time. Not even joking.
 		if(pyobj_to_bool(not_equal(*((*current_node)->key), n)))
 		{
 			current_node = &(*current_node)->next;
