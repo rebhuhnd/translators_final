@@ -10,8 +10,7 @@
 #define logic_and(A, B) bool_to_pyobj(pyobj_to_bool(A) && pyobj_to_bool(B))
 #define logic_or(A, B) bool_to_pyobj(pyobj_to_bool(A) || pyobj_to_bool(B))
 
-
-enum type_tag { INT, FLOAT, BOOL, LIST, NONE, STRING };
+enum type_tag { INT, FLOAT, BOOL, LIST, NONE, STRING, INVALID };
 
 struct pyobj_struct;
 
@@ -22,6 +21,14 @@ struct array_struct {
 
 typedef struct array_struct array;
 
+
+struct dict_struct {
+	struct pyobj_struct* key;
+	struct pyobj_struct* value;
+	struct dict_struct* next;
+};
+
+typedef struct dict_struct dict;
 struct string_struct {
     const char *data;
     unsigned int len;
@@ -36,6 +43,7 @@ struct pyobj_struct {
     double f;             /* float */
     char b;               /* bool */
     array l;              /* list */
+		dict* d;              /* dict */
     string s;               /* string */
   } u;
 };
@@ -54,8 +62,10 @@ pyobj not_equal(pyobj a, pyobj b);
 pyobj identical(pyobj lhs, pyobj rhs);
 pyobj contains(pyobj lhs, pyobj rhs);
 pyobj add(pyobj lhs, pyobj rhs);
+int find_key(pyobj dict, pyobj key);
 
 pyobj make_list(pyobj len);
+pyobj make_dict();
 static enum {LINE_INITIAL, LINE_CONTINUED, LINE_NEW} line_state = LINE_INITIAL;
 #define handle_continued(end) { \
     if (line_state == LINE_CONTINUED) {\
@@ -193,7 +203,7 @@ static void print(pyobj v) {
   default:
     printf("error, unhandled case in print\n");
     exit (1);
-  } 
+	}
 }
 
 pyobj int_to_pyobj(int x) {
@@ -234,6 +244,16 @@ pyobj make_list(pyobj len) {
   return v;
 }
 
+pyobj make_dict() {
+	pyobj v;
+	v.tag = DICT;
+	v.u.d = (dict*)malloc(sizeof(dict));
+	v.u.d->key = (pyobj*)malloc(sizeof(pyobj));
+	v.u.d->value = (pyobj*)malloc(sizeof(pyobj));
+	v.u.d->next = NULL;
+	return v;
+}
+
 pyobj* list_nth(pyobj list, pyobj n) {
   switch (list.tag) {
   case LIST: {
@@ -258,8 +278,8 @@ pyobj* list_nth(pyobj list, pyobj n) {
     default:
       printf("ERROR: list_nth expected integer index");
       exit(1);
-    }      
   }
+	}
   default:
     printf("ERROR: list_nth applied to non-list");
     exit(1);
@@ -294,6 +314,40 @@ pyobj* string_nth(pyobj string, pyobj n) {
     return new_str;
 }    
     
+int dict_len(dict* dictionary)
+{
+	dict** current_node = &dictionary;
+
+	int count = 0;
+	while(*current_node != NULL)
+		{
+			current_node = &(*current_node)->next;
+			count++;
+		}
+	return count;
+}
+
+pyobj* dict_lookup(pyobj dictionary, pyobj n) {
+	dict** current_node = &dictionary.u.d;
+
+	if (dictionary.tag != DICT) {
+		printf("ERROR: dict_lookup applied to non-dict");
+		exit(1);
+	}
+	while(*current_node != NULL && pyobj_to_bool(not_equal(*(*current_node)->key, n)))
+	{
+		current_node = &(*current_node)->next;
+	}
+	if(*current_node == NULL)
+	{
+		*current_node = malloc(sizeof(dict));
+		(*current_node)->next = NULL;
+		(*current_node)->key = &n;
+		(*current_node)->value->tag=INVALID;
+	}
+	return (*current_node)->value;
+}
+
 pyobj list_add(pyobj x, pyobj y) {
   array a = x.u.l;
   array b = y.u.l;
@@ -365,7 +419,7 @@ pyobj list_mul(pyobj x, pyobj y) {
   default:
     printf("error, unsupported operand types");
     exit (1);
-  }  
+	}
 }
 
 pyobj string_add(pyobj x, pyobj y) {
@@ -448,10 +502,12 @@ static int is_false(pyobj v)
     return v.u.b == 0;
   case LIST:
     return v.u.l.len == 0;
+	case DICT:
+		return 0;
   default:
     printf("error, unhandled case in is_false\n");
-    exit (1); 
-  } 
+		exit (1);
+	}
 }
 
 
@@ -460,6 +516,8 @@ pyobj* subscript(pyobj c, pyobj key)
   switch (c.tag) {
   case LIST:
     return list_nth(c, key);
+	case DICT:
+		return dict_lookup(c, key);
   case STRING:
     return string_nth(c, key);
   default:
@@ -469,7 +527,7 @@ pyobj* subscript(pyobj c, pyobj key)
 }
 
 #define gen_unary_op(NAME, OP) \
-pyobj NAME(pyobj a) { \
+		pyobj NAME(pyobj a) { \
   switch (a.tag) { \
   case INT: \
     return int_to_pyobj(OP a.u.i);                  \
@@ -487,7 +545,7 @@ gen_unary_op(unary_add, +)
 gen_unary_op(unary_sub, -)
 
 #define gen_binary_op(NAME, OP) \
-pyobj NAME(pyobj a, pyobj b) { \
+		pyobj NAME(pyobj a, pyobj b) { \
   switch (a.tag) { \
   case INT: \
     switch (b.tag) { \
@@ -613,6 +671,40 @@ pyobj list_greater_equal(array x, array y) {
   return logic_not (list_less(y,x));
 }
 
+pyobj dict_less(dict* x, dict* y) {
+	if(dict_len(x) < dict_len(y))
+		return bool_to_pyobj(1);
+	return bool_to_pyobj(0);
+}
+pyobj dict_equal(dict* x, dict* y) {
+	dict** x_node = &x;
+	dict** y_node = &y;
+
+	if(dict_len(x) != dict_len(y))
+		return bool_to_pyobj(0);
+	while(*x_node != NULL && *y_node != NULL)
+	{
+		if((*x_node)->key != (*y_node)->key || (*x_node)->value != (*y_node)->value)
+			return bool_to_pyobj(0);
+	}
+	if(*x_node != NULL || *y_node != NULL)
+		return bool_to_pyobj(0);
+	return bool_to_pyobj(1);
+}
+
+pyobj dict_not_equal(dict* x, dict* y) {
+	return logic_not(dict_equal(x,y));
+}
+pyobj dict_greater(dict* x, dict* y) {
+	return dict_less(y,x);
+}
+pyobj dict_less_equal(dict* x, dict* y) {
+	return logic_not (dict_greater(y,x));
+}
+pyobj dict_greater_equal(dict* x, dict* y) {
+	return logic_not (dict_less(y,x));
+}
+
 static pyobj none_less (pyobj a, pyobj b) {
     return bool_to_pyobj (b.tag != NONE);
 }
@@ -638,8 +730,8 @@ pyobj string_equal(string x, string y) {
 }
 
 #define gen_comparison(NAME, OP) \
-pyobj NAME(pyobj a, pyobj b) \
-{\
+		pyobj NAME(pyobj a, pyobj b) \
+		{\
   if (b.tag == NONE) \
     return none_##NAME (a, b); \
   switch (a.tag) {\
@@ -683,6 +775,13 @@ pyobj NAME(pyobj a, pyobj b) \
     default: \
       return bool_to_pyobj (0);                      \
     } \
+	case DICT: \
+	switch (b.tag) { \
+	case DICT: \
+	return dict_##NAME(a.u.d, b.u.d); \
+	default: \
+	return bool_to_pyobj (0); \
+	} \
   case STRING: \
     switch (b.tag) { \
     case STRING: \
@@ -695,7 +794,7 @@ pyobj NAME(pyobj a, pyobj b) \
   default: \
     return bool_to_pyobj (0);                        \
   } \
-}
+		}
 
 gen_comparison(less, <)
 gen_comparison(equal, ==)
@@ -724,13 +823,18 @@ pyobj identical(pyobj a, pyobj b) {
         case BOOL:   return bool_to_pyobj (a.u.b == b.u.b);
         case FLOAT:  return bool_to_pyobj (a.u.f == b.u.f);
         case LIST:   return bool_to_pyobj (a.u.l.len == b.u.l.len && a.u.l.data == b.u.l.data);
+	case DICT:	 return dict_equal(a.u.d, b.u.d);
         case NONE:   return bool_to_pyobj (1);
         case STRING: return bool_to_pyobj (a.u.s.len == b.u.s.len && a.u.s.data == b.u.s.data);
+	case INVALID: return bool_to_pyobj (0);
     }
     return bool_to_pyobj (0);
 }
 
 pyobj contains(pyobj a, pyobj b) {
+	switch (b.tag) {
+	case LIST:
+	{
     if (b.tag == STRING)
     {
         assert (a.tag == STRING);
@@ -763,10 +867,24 @@ pyobj contains(pyobj a, pyobj b) {
     for (unsigned int i = 0; i < b.u.l.len; i++)
     {
       if (pyobj_to_bool(equal(*list_nth(b,int_to_pyobj((int)i)), a)))
-      { 
+			{
          return bool_to_pyobj (1);
       }
     }
+	}
+	case DICT:
+	{
+		for (unsigned int i = 0; i < dict_len(b.u.d); i++)
+		{
+			if (pyobj_to_bool(equal(*list_nth(b,int_to_pyobj((int)i)), a)))
+			{
+				return bool_to_pyobj (1);
+			}
+		}
+	}
     return bool_to_pyobj (0);
+	default:
+		return bool_to_pyobj(0);
+	}
 }
 

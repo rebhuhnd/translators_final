@@ -86,20 +86,22 @@ compare_to_fun = {Lt: 'less', Gt: 'greater', LtE: 'less_equal', GtE: 'greater_eq
 # context is either 'expr' or 'lhs'
 def simplify_ops(n, context='expr'):
     if n is None:
-        return Name (id = "None", ctx = Load ())
+        return Name(id="None", ctx=Load())
     elif isinstance(n, list):
         # the actual Python list type, not an AST node representing a list
         return map(simplify_ops, n)
     elif isinstance(n, Module):
         return Module(body=map(simplify_ops, n.body))
     elif isinstance(n, Print):
-        def recursive_generate_lets (values, let_vals):
-            if len (values) == 0:
-                return Print(values = let_vals, nl = n.nl)
-            temp_name = generate_name ("print_let")
-            temp_val = Name (id = temp_name, ctx = Load ())
-            return Expr (value = Let (temp_name, simplify_ops (values[0]), recursive_generate_lets (values[1:], let_vals + [temp_val])))
-        return recursive_generate_lets (n.values, [])
+        def recursive_generate_lets(values, let_vals):
+            if len(values) == 0:
+                return Print(values=let_vals, nl=n.nl)
+            temp_name = generate_name("print_let")
+            temp_val = Name(id=temp_name, ctx=Load())
+            return Expr(value=Let(temp_name, simplify_ops(values[0]),
+                                  recursive_generate_lets(values[1:], let_vals + [temp_val])))
+
+        return recursive_generate_lets(n.values, [])
     elif isinstance(n, If):
         return If(test=simplify_ops(n.test), body=simplify_ops(n.body), orelse=simplify_ops(n.orelse))
     elif isinstance(n, While):
@@ -151,6 +153,22 @@ def simplify_ops(n, context='expr'):
 
         return Let(ls_name, PrimitiveOp('make_list', [Num(n=len(n.elts))]),
                    gen_list(n.elts, 0))
+    elif isinstance(n, Dict):
+        dict_name = generate_name('dict')
+
+        def gen_dict(keys, values, i):
+            if len(keys) == 0:
+                return Name(id=dict_name)
+            else:
+                return Let('_', PrimitiveOp('assign',
+                                       [PrimitiveOp('deref',
+                                                    [PrimitiveOp('subscript',
+                                                                 [Name(id=dict_name), simplify_ops(keys[0])])
+                                                     ]),
+                                        simplify_ops(values[0])]),
+                           gen_dict(keys[1:], values[1:], i + 1))
+
+        return Let(dict_name, PrimitiveOp('make_dict', []), gen_dict(n.keys, n.values, 0))
     elif isinstance(n, Subscript):  # Subscript(value=List(elts=[...]), slice=Index(value=Num(n=0)), ctx=Load()))
         return PrimitiveOp('deref', [PrimitiveOp('subscript',
                                                  [simplify_ops(n.value), simplify_ops(n.slice.value)])])
@@ -160,9 +178,10 @@ def simplify_ops(n, context='expr'):
         return Expr(value=simplify_ops(n.value))
     elif isinstance(n, Return):
         return Return(value=simplify_ops(n.value))
-    
+
     elif isinstance(n, Call):
-        return Call(func=simplify_ops(n.func), args = map (simplify_ops, n.args), keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
+        return Call(func=simplify_ops(n.func), args=map(simplify_ops, n.args), keywords=n.keywords, starargs=n.starargs,
+                    kwargs=n.kwargs)
     elif isinstance(n, Str):
         return n
     else:
@@ -226,6 +245,7 @@ def get_current(current_version, x):
     else:
         return 0
 
+
 def convert_to_ssa(t, current_version={}):
     if False:
         print >> logs, 'convert to ssa: ' + repr(t)
@@ -235,7 +255,7 @@ def convert_to_ssa(t, current_version={}):
     elif isinstance(t, Module):
         return Module(body=convert_to_ssa(t.body, {}))
     elif isinstance(t, Print):
-        return Print(values=[convert_to_ssa(e, current_version) for e in t.values],nl=t.nl)
+        return Print(values=[convert_to_ssa(e, current_version) for e in t.values], nl=t.nl)
     elif isinstance(t, Num):
         return t
     elif isinstance(t, Name):
@@ -328,27 +348,29 @@ def convert_to_ssa(t, current_version={}):
 
     elif isinstance(t, FunctionDef):
         name = t.name
-        name_v = get_high (name)
+        name_v = get_high(name)
         current_version[name] = name_v
-        args = convert_to_ssa (t.args, current_version)
-        body = [convert_to_ssa (n, current_version) for n in t.body]
-        return FunctionDef(name=t.name + '_' + str(name_v), args = args, decorator_list=t.decorator_list, body = body)
-    
+        args = convert_to_ssa(t.args, current_version)
+        body = [convert_to_ssa(n, current_version) for n in t.body]
+        return FunctionDef(name=t.name + '_' + str(name_v), args=args, decorator_list=t.decorator_list, body=body)
+
     elif isinstance(t, arguments):
-        def version_arg (a):
-            assert isinstance (a, Name)
+        def version_arg(a):
+            assert isinstance(a, Name)
             name = a.id
-            name_v = get_high (name)
+            name_v = get_high(name)
             current_version[name] = name_v
-            return Name (id = name + "_" + str (name_v), ctx = a.ctx)
-        return arguments (args = map (version_arg, t.args), vararg=t.vararg, kwarg=t.kwarg, defaults=t.defaults)
+            return Name(id=name + "_" + str(name_v), ctx=a.ctx)
+
+        return arguments(args=map(version_arg, t.args), vararg=t.vararg, kwarg=t.kwarg, defaults=t.defaults)
 
     elif isinstance(t, Expr):
         return Expr(value=convert_to_ssa(t.value, current_version))
-    
+
     elif isinstance(t, Call):
-        return Call(func=convert_to_ssa(t.func, current_version), args = convert_to_ssa (t.args, current_version), keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
-    
+        return Call(func=convert_to_ssa(t.func, current_version), args=convert_to_ssa(t.args, current_version),
+                    keywords=t.keywords, starargs=t.starargs, kwargs=t.kwargs)
+
     elif isinstance(t, Return):
         return Return(value=convert_to_ssa(t.value, current_version))
     elif isinstance(t, Str):
@@ -381,12 +403,13 @@ def insert_var_decls(n):
         assigned_for_main = []
         body = []
         for x in n.body:
-            if isinstance (x, FunctionDef):
-                decls = [VarDecl(y, 'undefined') for y in assigned_vars (x.body)]
-                body.append (FunctionDef(name=x.name, args=x.args, decorator_list=x.decorator_list, body=prepend_stmts (decls, x.body))) 
+            if isinstance(x, FunctionDef):
+                decls = [VarDecl(y, 'undefined') for y in assigned_vars(x.body)]
+                body.append(FunctionDef(name=x.name, args=x.args, decorator_list=x.decorator_list,
+                                        body=prepend_stmts(decls, x.body)))
             else:
-                body.append (x)
-                assigned_for_main += list (assigned_vars (x))
+                body.append(x)
+                assigned_for_main += list(assigned_vars(x))
         decls = [VarDecl(x, 'undefined') for x in assigned_for_main]
         return Module(body=prepend_stmts(decls, body))
     else:
@@ -456,10 +479,10 @@ def remove_ssa(n):
         else:
             ret = While(test, body, None)
         return ret
-    
-    elif isinstance (n, Let):
+
+    elif isinstance(n, Let):
         return n
-    
+
     elif isinstance(n, Pass):
         return n
 
@@ -474,13 +497,13 @@ def remove_ssa(n):
 
     elif isinstance(n, Expr):
         return n
-    
+
     elif isinstance(n, Call):
         return Call(func=remove_ssa(n.func), args=n.args, keywords=n.keywords, starargs=n.starargs, kwargs=n.kwargs)
-    
+
     elif isinstance(n, Return):
         return n
-    
+
     elif isinstance(n, Num):
         return n
 
@@ -507,7 +530,8 @@ def generate_c(n):
     elif isinstance(n, Print):
         space = 'printf(\" \");'
         nodes_in_c = ['print(%s);' % generate_c(x) for x in n.values]
-        return "handle_continued (0);\n" + space.join(nodes_in_c) + "\nline_state = %s;\n" % ("LINE_NEW" if n.nl else "LINE_CONTINUED")
+        return "handle_continued (0);\n" + space.join(nodes_in_c) + "\nline_state = %s;\n" % (
+            "LINE_NEW" if n.nl else "LINE_CONTINUED")
     elif isinstance(n, Delete):
         return generate_c(n.targets) + ';'
     elif isinstance(n, If):
@@ -552,38 +576,40 @@ def generate_c(n):
         return '({ pyobj ' + n.var + ' = ' + rhs + '; ' + generate_c(n.body) + ';})'
     elif isinstance(n, FunctionDef):
         return ""
-    elif isinstance (n, arguments):
-        return ", ".join (map (lambda a: "pyobj " + generate_c (a), n.args))
+    elif isinstance(n, arguments):
+        return ", ".join(map(lambda a: "pyobj " + generate_c(a), n.args))
     elif isinstance(n, Expr):
         return generate_c(n.value) + ";"
     elif isinstance(n, Call):
-        return generate_c(n.func) + "(%s)" % ", ".join (map (generate_c, n.args))
+        return generate_c(n.func) + "(%s)" % ", ".join(map(generate_c, n.args))
     elif isinstance(n, Return):
-        return "return (%s);" % generate_c (n.value)
+        return "return (%s);" % generate_c(n.value)
     elif n is None:
         return ''
     else:
         raise Exception('Error in generate_c: unrecognized AST node ' + repr(n) + dump(n))
 
-def get_prototype (funcdef):
-    
-    return "pyobj %s(%s)" % (funcdef.name, generate_c (funcdef.args))
 
-def get_prototypes (n):
-    assert isinstance (n, Module)
-    
-    for n in n.body:
-        
-        if isinstance (n, FunctionDef):
-            print get_prototype (n) + ";\n"    
+def get_prototype(funcdef):
+    return "pyobj %s(%s)" % (funcdef.name, generate_c(funcdef.args))
 
-def get_functions (n):
-    assert isinstance (n, Module)
-    
+
+def get_prototypes(n):
+    assert isinstance(n, Module)
+
     for n in n.body:
-        
-        if isinstance (n, FunctionDef):
-            print "%s\n{%s return None;}" % (get_prototype (n), generate_c (n.body))
+
+        if isinstance(n, FunctionDef):
+            print get_prototype(n) + ";\n"
+
+
+def get_functions(n):
+    assert isinstance(n, Module)
+
+    for n in n.body:
+
+        if isinstance(n, FunctionDef):
+            print "%s\n{%s return None;}" % (get_prototype(n), generate_c(n.body))
 
 
 ######################### MAIN ##################################
@@ -612,8 +638,8 @@ if __name__ == "__main__":
             print >> logs, dump(ir)
             print >> logs, 'generating C'
         print skeleton
-        get_prototypes (ir)
-        get_functions (ir)
+        get_prototypes(ir)
+        get_functions(ir)
         print generate_c(ir)
     except EOFError:
         print "Could not open file %s." % sys.argv[1]
