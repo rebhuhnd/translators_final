@@ -155,21 +155,14 @@ def simplify_ops(n, context='expr'):
                 return Name(id=dict_name)
             else:
                 return Let('_', PrimitiveOp('assign',
-                                            [PrimitiveOp('deref',
-                                                         [PrimitiveOp('subscript',
-                                                                      [Name(id=dict_name), Num(n=i)])
-                                                          ]),
-                                             simplify_ops(keys[0])]),
-                           PrimitiveOp('assign',
                                        [PrimitiveOp('deref',
                                                     [PrimitiveOp('subscript',
-                                                                 [Name(id=dict_name), Num(n=i)])
+                                                                 [Name(id=dict_name), simplify_ops(keys[0])])
                                                      ]),
                                         simplify_ops(values[0])]),
                            gen_dict(keys[1:], values[1:], i + 1))
 
-        return Let(dict_name, PrimitiveOp('make_dict', [Num(n=len(n.keys))]),
-                   gen_dict(n.keys, n.values, 0))
+        return Let(dict_name, PrimitiveOp('make_dict', []), gen_dict(n.keys, n.values, 0))
     elif isinstance(n, Subscript):  # Subscript(value=List(elts=[...]), slice=Index(value=Num(n=0)), ctx=Load()))
         return PrimitiveOp('deref', [PrimitiveOp('subscript',
                                                  [simplify_ops(n.value), simplify_ops(n.slice.value)])])

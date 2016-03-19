@@ -11,7 +11,7 @@
 #define logic_or(A, B) bool_to_pyobj(pyobj_to_bool(A) || pyobj_to_bool(B))
 
 
-enum type_tag { INT, FLOAT, BOOL, LIST, DICT, NONE };
+enum type_tag { INT, FLOAT, BOOL, LIST, DICT, NONE , INVALID};
 
 struct pyobj_struct;
 
@@ -26,7 +26,7 @@ typedef struct array_struct array;
 struct dict_struct {
 	struct pyobj_struct* key;
 	struct pyobj_struct* value;
-	unsigned int len;
+	struct dict_struct* next;
 };
 
 typedef struct dict_struct dict;
@@ -38,7 +38,7 @@ struct pyobj_struct {
 		double f;             /* float */
 		char b;               /* bool */
 		array l;              /* list */
-		dict d;              /* dict */
+		dict* d;              /* dict */
 	} u;
 };
 typedef struct pyobj_struct pyobj;
@@ -59,7 +59,7 @@ pyobj add(pyobj lhs, pyobj rhs);
 int find_key(pyobj dict, pyobj key);
 
 pyobj make_list(pyobj len);
-pyobj make_dict(pyobj len);
+pyobj make_dict();
 static enum {LINE_INITIAL, LINE_CONTINUED, LINE_NEW} line_state = LINE_INITIAL;
 #define handle_continued(end) { \
 		if (line_state == LINE_CONTINUED) {\
@@ -208,13 +208,13 @@ pyobj make_list(pyobj len) {
 	return v;
 }
 
-pyobj make_dict(pyobj len) {
+pyobj make_dict() {
 	pyobj v;
-	assert (len.tag == INT);
 	v.tag = DICT;
-	v.u.d.key = (pyobj*)malloc(sizeof(pyobj) * len.u.i);
-	v.u.d.value = (pyobj*)malloc(sizeof(pyobj) * len.u.i);
-	v.u.d.len = len.u.i;
+	v.u.d = (dict*)malloc(sizeof(dict));
+	v.u.d->key = (pyobj*)malloc(sizeof(pyobj));
+	v.u.d->value = (pyobj*)malloc(sizeof(pyobj));
+	v.u.d->next = NULL;
 	return v;
 }
 
@@ -250,73 +250,38 @@ pyobj* list_nth(pyobj list, pyobj n) {
 	}
 }
 
-pyobj* dict_nth(pyobj dict, pyobj n, int is_value) {
-	switch (dict.tag) {
-	case LIST: {
-		switch (n.tag) {
-		case INT: {
-			if (n.u.i < 0 || (unsigned int)n.u.i < dict.u.d.len){
-				if(is_value)
-					return &(dict.u.d.value[n.u.i]);
-				return &(dict.u.d.key[n.u.i]);
-			}
-			else {
-				printf("ERROR: list_nth index larger than list");
-				exit(1);
-			}
+int dict_len(dict* dictionary)
+{
+	dict** current_node = &dictionary;
+
+	int count = 0;
+	while(*current_node != NULL)
+		{
+			current_node = &(*current_node)->next;
+			count++;
 		}
-		case BOOL: {
-			unsigned int idx = n.u.b ? 1u : 0u;
-			if (idx < list.u.l.len)
-				return &(list.u.l.data[idx]);
-			else {
-				printf("ERROR: list_nth index larger than list");
-				exit(1);
-			}
-		}
-		default:
-			printf("ERROR: list_nth expected integer index");
-			exit(1);
-		}
-	}
-	default:
-		printf("ERROR: list_nth applied to non-list");
-		exit(1);
-	}
+	return count;
 }
 
-pyobj* dict_key(pyobj dict, pyobj n) {
-	int index;
+pyobj* dict_lookup(pyobj dictionary, pyobj n) {
+	dict** current_node = &dictionary.u.d;
 
-	switch (dict.tag) {
-	case DICT:
-		for(index = 0; index < dict.u.d.len; index++)
-		{
-			switch(n.tag)
-			{
-			case INT:
-				if(n.u.i == dict.u.d.key[index].u.i){
-					return &(dict.u.d.value[index]);
-				}
-				continue;
-			case FLOAT:
-				if(n.u.f == dict.u.d.key[index].u.f)
-					return &(dict.u.d.value[index]);
-				continue;
-			case BOOL:
-				if(n.u.b == dict.u.d.key[index].u.b)
-					return &(dict.u.d.value[index]);
-				continue;
-
-			default:
-				printf("Invalid Key Type.\n");
-				exit(1);
-			}
-		}
-	default:
-		printf("ERROR: dict_key applied to non-dict\n");
+	if (dictionary.tag != DICT) {
+		printf("ERROR: dict_lookup applied to non-dict");
 		exit(1);
 	}
+	while(*current_node != NULL && pyobj_to_bool(not_equal(*(*current_node)->key, n)))
+	{
+		current_node = &(*current_node)->next;
+	}
+	if(*current_node == NULL)
+	{
+		*current_node = malloc(sizeof(dict));
+		(*current_node)->next = NULL;
+		(*current_node)->key = &n;
+		(*current_node)->value->tag=INVALID;
+	}
+	return (*current_node)->value;
 }
 
 pyobj list_add(pyobj x, pyobj y) {
@@ -408,13 +373,13 @@ static int is_false(pyobj v)
 }
 
 
-pyobj* subscript(pyobj c, pyobj key, int is_value)
+pyobj* subscript(pyobj c, pyobj key)
 {
 	switch (c.tag) {
 	case LIST:
 		return list_nth(c, key);
 	case DICT:
-		return dict_nth(c, key, is_value);
+		return dict_lookup(c, key);
 	default:
 		printf("error in subscript, not a list or dictionary\n");
 		exit (1);
@@ -551,39 +516,37 @@ pyobj list_greater_equal(array x, array y) {
 	return logic_not (list_less(y,x));
 }
 
-pyobj dict_less(dict x, dict y) {
-	int i;
-	for (i = 0; i != min(x.len, y.len); ++i) {
-		if (less(*(x.key) , *(y.key)).u.b)
-			return bool_to_pyobj (1);
-		else if (less(*(y.key), *(x.key)).u.b)
-			return bool_to_pyobj (0);
+pyobj dict_less(dict* x, dict* y) {
+	if(dict_len(x) < dict_len(y))
+		return bool_to_pyobj(1);
+	return bool_to_pyobj(0);
+}
+pyobj dict_equal(dict* x, dict* y) {
+	dict** x_node = &x;
+	dict** y_node = &y;
+
+	if(dict_len(x) != dict_len(y))
+		return bool_to_pyobj(0);
+	while(*x_node != NULL && *y_node != NULL)
+	{
+		if((*x_node)->key != (*y_node)->key || (*x_node)->value != (*y_node)->value)
+			return bool_to_pyobj(0);
 	}
-	if (x.len < y.len)
-		return bool_to_pyobj (1);
-	else
-		return bool_to_pyobj (0);
+	if(*x_node != NULL || *y_node != NULL)
+		return bool_to_pyobj(0);
+	return bool_to_pyobj(1);
 }
-pyobj dict_equal(dict x, dict y) {
-	char eq = 1;
-	int i;
-	for (i = 0; i != min(x.len, y.len); ++i)
-		eq = eq && equal(*(x.key), *(y.key)).u.b && equal(*(x.value), *(y.value)).u.b;
-	if (x.len == y.len)
-		return bool_to_pyobj (eq);
-	else
-		return bool_to_pyobj (0);
-}
-pyobj dict_not_equal(dict x, dict y) {
+
+pyobj dict_not_equal(dict* x, dict* y) {
 	return logic_not(dict_equal(x,y));
 }
-pyobj dict_greater(dict x, dict y) {
+pyobj dict_greater(dict* x, dict* y) {
 	return dict_less(y,x);
 }
-pyobj dict_less_equal(dict x, dict y) {
+pyobj dict_less_equal(dict* x, dict* y) {
 	return logic_not (dict_greater(y,x));
 }
-pyobj dict_greater_equal(dict x, dict y) {
+pyobj dict_greater_equal(dict* x, dict* y) {
 	return logic_not (dict_less(y,x));
 }
 
@@ -682,8 +645,9 @@ pyobj identical(pyobj a, pyobj b) {
 	case BOOL:   return bool_to_pyobj (a.u.b == b.u.b);
 	case FLOAT:  return bool_to_pyobj (a.u.f == b.u.f);
 	case LIST:   return bool_to_pyobj (a.u.l.len == b.u.l.len && a.u.l.data == b.u.l.data);
-	case DICT:	 return bool_to_pyobj (a.u.d.len == b.u.d.len && a.u.d.key == b.u.d.key && a.u.d.value == b.u.d.value );
+	case DICT:	 return dict_equal(a.u.d, b.u.d);
 	case NONE:   return bool_to_pyobj (1);
+	case INVALID: return bool_to_pyobj (0);
 	}
 	return bool_to_pyobj (0);
 }
@@ -702,7 +666,7 @@ pyobj contains(pyobj a, pyobj b) {
 	}
 	case DICT:
 	{
-		for (unsigned int i = 0; i < b.u.d.len; i++)
+		for (unsigned int i = 0; i < dict_len(b.u.d); i++)
 		{
 			if (pyobj_to_bool(equal(*list_nth(b,int_to_pyobj((int)i)), a)))
 			{
